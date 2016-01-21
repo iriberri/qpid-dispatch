@@ -40,7 +40,7 @@ before_script:
 - cmake .. -DCMAKE_INSTALL_PREFIX=/usr
 - sudo make install
 script:
-- export PYTHONPATH=/usr/lib/proton/bindings/python:$PYTHONPATH
+- export PYTHONPATH=/usr/lib/proton/bindings/python:/usr/lib/qpid-dispatch/python:$PYTHONPATH
 - ctest -V
 
 
