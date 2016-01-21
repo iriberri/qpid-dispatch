@@ -1,0 +1,37 @@
+os:
+- linux
+language:
+- python
+python:
+- 2.7
+addons:
+  apt:
+    packages:
+    - cmake
+    - cmake-curses-gui
+    - uuid-dev
+    - libssl-dev
+    - libsasl2-2
+    - libsasl2-dev
+    - swig
+    - python-dev
+    - ruby-dev
+    - libperl-dev
+    - git
+    - make
+    - doxygen
+    - valgrind
+
+before_install:
+- git submodule add https://github.com/apache/qpid-proton.git
+- git submodule init
+- git submodule update
+before_script:
+- export PATH=${HOME}/.local/bin:${PATH}
+- cd qpid-proton
+- mkdir build
+- cd build
+- cmake .. -DCMAKE_INSTALL_PREFIX=$PWD/install
+
+
+
