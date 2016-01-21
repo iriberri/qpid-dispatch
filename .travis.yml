@@ -37,9 +37,10 @@ before_script:
 - cd ../..
 - mkdir build
 - cd build
-- sudo cmake .. -DCMAKE_INSTALL_PREFIX=/usr
-- export PYTHONPATH=/usr/lib/python2.7/site-packages:$PYTHONPATH
+- cmake .. -DCMAKE_INSTALL_PREFIX=/usr
+- sudo make install
 script:
-- sudo cmake --build . --target install && ctest -V
+- export PYTHONPATH=/home/travis/virtualenv/python2.7.9/lib/python2.7/site-packages:$PYTHONPATH
+- ctest -V
 
 
