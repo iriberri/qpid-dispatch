@@ -32,7 +32,7 @@ before_script:
 - cd qpid-proton
 - mkdir build
 - cd build
-- cmake .. -DSYSINSTALL_BINDINGS=ON -DCMAKE_INSTALL_PREFIX=/usr -DSYSINSTALL_PYTHON=ON
+- cmake .. -DSYSINSTALL_BINDINGS=OFF -DCMAKE_INSTALL_PREFIX=/usr -DSYSINSTALL_PYTHON=OFF
 - sudo make install
 - cd ../..
 - mkdir build
@@ -40,7 +40,6 @@ before_script:
 - cmake .. -DCMAKE_INSTALL_PREFIX=/usr
 - sudo make install
 script:
-- export PYTHONPATH=/home/travis/virtualenv/python2.7.9/lib/python2.7/site-packages:$PYTHONPATH
 - ctest -V
 
 
