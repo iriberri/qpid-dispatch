@@ -31,7 +31,14 @@ before_script:
 - cd qpid-proton
 - mkdir build
 - cd build
-- cmake .. -DCMAKE_INSTALL_PREFIX=$PWD/install
-
+- cmake .. -DSYSINSTALL_BINDINGS=ON -DCMAKE_INSTALL_PREFIX=/usr -DSYSINSTALL_PYTHON=ON
+- make install
+- cd ../..
+- mkdir build
+- cd build
+- cmake .. -DCMAKE_INSTALL_PREFIX=/usr
+- export PYTHONPATH=/usr/lib/python2.7/site-packages:$PYTHONPATH
+script:
+- cmake --build . --target install && ctest -V
 
 
