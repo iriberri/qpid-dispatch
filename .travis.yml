@@ -33,7 +33,7 @@ before_script:
 - mkdir build
 - cd build
 - cmake .. -DSYSINSTALL_BINDINGS=ON -DCMAKE_INSTALL_PREFIX=/usr -DSYSINSTALL_PYTHON=ON
-- make install
+- sudo make install
 - cd ../..
 - mkdir build
 - cd build
