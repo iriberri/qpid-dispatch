@@ -30,8 +30,9 @@ before_script:
 - cd qpid-proton
 - mkdir build
 - cd build
-- cmake .. -DSYSINSTALL_BINDINGS=OFF -DBUILD_GO=OFF -DCMAKE_INSTALL_PREFIX=/usr -DSYSINSTALL_PYTHON=OFF
+- cmake .. -DCMAKE_INSTALL_PREFIX=/usr
 - sudo make install
+- source ./config.sh
 - cd ../..
 - mkdir build
 - cd build
