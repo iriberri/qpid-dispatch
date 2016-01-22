@@ -145,6 +145,7 @@ class NeighborTest(unittest.TestCase):
         self.neighbors[node_id] = (instance, link_id, now)
 
     def setUp(self):
+        print 'sys.path ', sys.path
         self.sent = []
         self.neighbors = {}
         self.id = "R1"
