@@ -38,6 +38,7 @@ before_script:
 - cmake .. -DCMAKE_INSTALL_PREFIX=/usr
 - sudo make install
 script:
+- export PYTHONPATH=$PYTHONPATH:/usr/lib/proton/bindings/python
 - ctest -V
 
 
