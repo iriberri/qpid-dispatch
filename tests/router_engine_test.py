@@ -146,6 +146,7 @@ class NeighborTest(unittest.TestCase):
 
     def setUp(self):
         print 'sys.path ', sys.path
+        print 'os.environ', os.environ
         self.sent = []
         self.neighbors = {}
         self.id = "R1"
