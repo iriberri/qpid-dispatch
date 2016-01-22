@@ -1,5 +1,6 @@
 os:
 - linux
+dist: trusty
 sudo: required
 language:
 - python
@@ -40,6 +41,7 @@ before_script:
 - cmake .. -DCMAKE_INSTALL_PREFIX=/usr
 - sudo make install
 script:
+- env PYTHON_CONFIGURE_OPTS="--enable-shared"
 - export LD_LIBRARY_PATH=/home/travis/virtualenv/python2.7.9/lib:$LD_LIBRARY_PATH
 - export PYTHONPATH=/usr/lib/proton/bindings/python:/usr/lib/qpid-dispatch/python:/usr/lib/python2.7/site-packages:$PYTHONPATH
 - ctest -V
