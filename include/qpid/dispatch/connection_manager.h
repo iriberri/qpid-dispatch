@@ -29,6 +29,7 @@
 #include <qpid/dispatch/iterator.h>
 #include <qpid/dispatch/parse.h>
 #include <qpid/dispatch/compose.h>
+#include <qpid/dispatch/agent.h>
 
 typedef struct qd_connection_manager_t qd_connection_manager_t;
 typedef struct qd_config_connector_t qd_config_connector_t;
@@ -79,25 +80,6 @@ void qd_config_connector_free(qd_connection_manager_t *cm, qd_config_connector_t
  */
 void qd_connection_manager_start(qd_dispatch_t *qd);
 
-qd_amqp_error_t qd_connection_manager_create_ssl_profile(qd_dispatch_t       *qd,
-                                                         qd_field_iterator_t *name,
-                                                         qd_parsed_field_t   *in_body,
-                                                         qd_composed_field_t *out_body);
-
-qd_amqp_error_t qd_connection_manager_delete_ssl_profile(qd_dispatch_t *qd,
-                                                         qd_field_iterator_t *name,
-                                                         qd_field_iterator_t *identity);
-
-qd_amqp_error_t qd_connection_manager_read_ssl_profile(qd_dispatch_t *qd,
-                                                       qd_field_iterator_t *name,
-                                                       qd_field_iterator_t *identity,
-                                                       qd_composed_field_t *out_body);
-
-qd_amqp_error_t qd_connection_manager_query_ssl_profile(qd_dispatch_t       *qd,
-                                                        int                  offset,
-                                                        int                  count,
-                                                        qd_parsed_field_t   *in_body,
-                                                        qd_composed_field_t *out_body);
 /**
  * Get the connector's name.
  *

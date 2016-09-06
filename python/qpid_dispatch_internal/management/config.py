@@ -28,7 +28,7 @@ import os
 
 from qpid_dispatch.management.entity import camelcase
 from ..dispatch import QdDll
-from qid_dispatch_internal.management.schema.schema import QdSchema
+from qpid_dispatch_internal.management.schema.qd_schema import QdSchema
 
 
 class Config(object):

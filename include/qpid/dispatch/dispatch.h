@@ -54,6 +54,13 @@ void qd_dispatch_free(qd_dispatch_t *qd);
  */
 qd_error_t qd_dispatch_load_config(qd_dispatch_t *qd, const char *config_path);
 
+/**
+ *
+ */
+qd_error_t qd_dispatch_start_agent(qd_dispatch_t *qd, const char *config_path);
+
+
+qd_error_t qd_dispatch_prepare(qd_dispatch_t *qd);
 
 /**
  * @}

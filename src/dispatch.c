@@ -55,7 +55,7 @@ qd_dispatch_t *qd_dispatch(const char *python_pkgdir)
     qd_dispatch_t *qd = NEW(qd_dispatch_t);
     memset(qd, 0, sizeof(qd_dispatch_t));
 
-    qd_entity_cache_initialize();   /* Must be first */
+    //qd_entity_cache_initialize();   /* Must be first */
     qd_alloc_initialize();
     qd_log_initialize();
     qd_error_initialize();
@@ -77,7 +77,9 @@ qd_dispatch_t *qd_dispatch(const char *python_pkgdir)
 // We pass pointers as longs via the python interface, make sure this is safe.
 STATIC_ASSERT(sizeof(long) >= sizeof(void*), pointer_is_bigger_than_long);
 
-qd_error_t qd_dispatch_load_config(qd_dispatch_t *qd, const char *config_path)
+
+
+qd_error_t qd_dispatch_start_agent(qd_dispatch_t *qd, const char *config_path)
 {
     qd->dl_handle = dlopen(QPID_DISPATCH_LIB, RTLD_LAZY | RTLD_NOLOAD);
     if (!qd->dl_handle)
@@ -85,17 +87,32 @@ qd_error_t qd_dispatch_load_config(qd_dispatch_t *qd, const char *config_path)
 
     qd_python_lock_state_t lock_state = qd_python_lock();
 
-    qd_agent_t *agent = qd_agent(qd, "$management", config_path);
-    qd->agent = agent;
+    //
+    // Creates a new qd_agent object.
+    //
+    qd->agent = qd_agent(qd, "$management", config_path);
 
+    //Start the agent. This will load and validate the contents of the config file.
+    qd_agent_start(qd->agent);
 
-    /*PyObject *module = PyImport_ImportModule("qpid_dispatch_internal.management.config");
+    qd_python_unlock(lock_state);
+    return qd_error_code();
+}
+
+qd_error_t qd_dispatch_load_config(qd_dispatch_t *qd, const char *config_path)
+{
+    qd->dl_handle = dlopen(QPID_DISPATCH_LIB, RTLD_LAZY | RTLD_NOLOAD);
+    if (!qd->dl_handle)
+        return qd_error(QD_ERROR_RUNTIME, "Cannot locate library %s", QPID_DISPATCH_LIB);
+
+    qd_python_lock_state_t lock_state = qd_python_lock();
+    PyObject *module = PyImport_ImportModule("qpid_dispatch_internal.management.config");
     PyObject *configure_dispatch = module ? PyObject_GetAttrString(module, "configure_dispatch") : NULL;
     Py_XDECREF(module);
     PyObject *result = configure_dispatch ? PyObject_CallFunction(configure_dispatch, "(lls)", (long)qd, qd->dl_handle, config_path) : NULL;
     Py_XDECREF(configure_dispatch);
     if (!result) qd_error_py();
-    Py_XDECREF(result);*/
+    Py_XDECREF(result);
     qd_python_unlock(lock_state);
     return qd_error_code();
 }
@@ -226,6 +243,7 @@ qd_error_t qd_dispatch_prepare(qd_dispatch_t *qd)
     qd->router             = qd_router(qd, qd->router_mode, qd->router_area, qd->router_id);
     qd->connection_manager = qd_connection_manager(qd);
     qd->policy             = qd_policy(qd);
+    qd_connection_manager_start(qd);
     return qd_error_code();
 }
 

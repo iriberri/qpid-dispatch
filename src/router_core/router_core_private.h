@@ -24,6 +24,7 @@
 #include <qpid/dispatch/threading.h>
 #include <qpid/dispatch/log.h>
 #include <memory.h>
+#include "schema_enum.h"
 
 typedef struct qdr_address_t         qdr_address_t;
 typedef struct qdr_address_config_t  qdr_address_config_t;

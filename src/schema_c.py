@@ -163,7 +163,8 @@ class Generator(object):
         for entity_type in entity_types.values():
             attribute_names = []
             for attrib in entity_type.attributes.values():
-                attribute_names.append(attrib.name)
+                if not attrib.deprecated:
+                    attribute_names.append(attrib.name)
             enums.append(self.EntityTypeEnumGenerator(self, entity_type, "attributes", attribute_names))
 
         self.header('schema_enum', '\n'.join(e.decl() for e in enums))

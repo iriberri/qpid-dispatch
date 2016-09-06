@@ -83,7 +83,7 @@ set(qpid_dispatch_SOURCES
   router_core/transfer.c
   router_node.c
   router_pynode.c
-  agent.c
+  agent_amqp.c
   schema_enum.c
   server.c
   timer.c

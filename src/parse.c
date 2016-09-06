@@ -410,3 +410,23 @@ qd_parsed_field_t *qd_parse_value_by_key(qd_parsed_field_t *field, const char *k
 
     return 0;
 }
+
+qd_parsed_field_t *qd_parse_value_by_int_index(qd_parsed_field_t *field, uint32_t key)
+{
+    uint32_t count = qd_parse_sub_count(field);
+
+    for (uint32_t idx = 0; idx < count; idx++) {
+        qd_parsed_field_t *sub  = qd_parse_sub_key(field, idx);
+        if (!sub)
+            return 0;
+
+        uint32_t val = qd_parse_as_uint(sub);
+
+        if(val == key)
+            return qd_parse_sub_value(field, idx);
+    }
+
+    return 0;
+
+
+}

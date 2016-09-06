@@ -40,8 +40,8 @@ typedef struct qd_config_address_t   qd_config_address_t;
 #include <qpid/dispatch/container.h>
 #include <qpid/dispatch/router.h>
 #include <qpid/dispatch/connection_manager.h>
+#include <qpid/dispatch/agent.h>
 #include "policy.h"
-#include "agent.h"
 #include "server_private.h"
 #include "router_private.h"
 

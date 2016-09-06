@@ -271,7 +271,7 @@ static qd_error_t load_server_config(qd_dispatch_t *qd, qd_server_config_t *conf
     return qd_error_code();
 }
 
-static char *qd_get_parsed_field_value(qd_config_ssl_profile_t *ssl_profile, qd_parsed_field_t *in_body, int field_num)
+/*static char *qd_get_parsed_field_value(qd_parsed_field_t *in_body, int field_num)
 {
     char key[10];
     sprintf(key, "%d", field_num);
@@ -283,118 +283,234 @@ static char *qd_get_parsed_field_value(qd_config_ssl_profile_t *ssl_profile, qd_
         }
     }
     return 0;
-}
+}*/
 
-static void qd_ssl_profile_insert_column(qd_config_ssl_profile_t *ssl_profile, int col, qd_composed_field_t *out_body, bool as_map)
+static void qd_ssl_profile_set_column(qd_config_ssl_profile_t *ssl_profile, int col, qd_agent_request_t *request)
 {
-    if (as_map)
-        qd_compose_insert_string(out_body, qd_schema_sslProfile_attributes_names[col]);
-
     switch(col) {
         case QD_SCHEMA_SSLPROFILE_ATTRIBUTES_CERTDB:
-            if (ssl_profile->ssl_trusted_certificate_db)
-                qd_compose_insert_string(out_body, ssl_profile->ssl_trusted_certificate_db);
-            else
-                qd_compose_insert_null(out_body);
+            qd_agent_request_set_string(request, ssl_profile->ssl_trusted_certificate_db);
             break;
         case QD_SCHEMA_SSLPROFILE_ATTRIBUTES_CERTFILE:
-            if (ssl_profile->ssl_certificate_file)
-                qd_compose_insert_string(out_body, ssl_profile->ssl_certificate_file);
-            else
-                qd_compose_insert_null(out_body);
+            qd_agent_request_set_string(request, ssl_profile->ssl_certificate_file);
             break;
         case QD_SCHEMA_SSLPROFILE_ATTRIBUTES_KEYFILE:
-            if (ssl_profile->ssl_private_key_file)
-                qd_compose_insert_string(out_body, ssl_profile->ssl_private_key_file);
-            else
-                qd_compose_insert_null(out_body);
+            qd_agent_request_set_string(request, ssl_profile->ssl_private_key_file);
             break;
         case QD_SCHEMA_SSLPROFILE_ATTRIBUTES_PASSWORDFILE:
-            if (ssl_profile->ssl_password_file)
-                qd_compose_insert_string(out_body, ssl_profile->ssl_password_file);
-            else
-                qd_compose_insert_null(out_body);
+            qd_agent_request_set_string(request, ssl_profile->ssl_password_file);
             break;
         case QD_SCHEMA_SSLPROFILE_ATTRIBUTES_PASSWORD:
-            if (ssl_profile->ssl_password)
-                qd_compose_insert_string(out_body, ssl_profile->ssl_password);
-            else
-                qd_compose_insert_null(out_body);
+            qd_agent_request_set_string(request, ssl_profile->ssl_password);
             break;
         case QD_SCHEMA_SSLPROFILE_ATTRIBUTES_UIDFORMAT:
-            if (ssl_profile->ssl_uid_format)
-                qd_compose_insert_string(out_body, ssl_profile->ssl_uid_format);
-            else
-                qd_compose_insert_null(out_body);
+            qd_agent_request_set_string(request, ssl_profile->ssl_uid_format);
             break;
         case QD_SCHEMA_SSLPROFILE_ATTRIBUTES_DISPLAYNAMEFILE:
-            if (ssl_profile->ssl_display_name_file)
-                qd_compose_insert_string(out_body, ssl_profile->ssl_display_name_file);
-            else
-                qd_compose_insert_null(out_body);
+            qd_agent_request_set_string(request, ssl_profile->ssl_display_name_file);
             break;
         case QD_SCHEMA_SSLPROFILE_ATTRIBUTES_NAME:
-            if (ssl_profile->name)
-                qd_compose_insert_string(out_body, ssl_profile->name);
-            else
-                qd_compose_insert_null(out_body);
+            qd_agent_request_set_string(request, ssl_profile->name);
             break;
         case QD_SCHEMA_SSLPROFILE_ATTRIBUTES_IDENTITY: {
             char id_str[100];
             snprintf(id_str, 100, "%"PRId64, ssl_profile->identity);
-            qd_compose_insert_string(out_body, id_str);
+            qd_agent_request_set_string(request, id_str);
             break;
         }
         default: break;
-
     }
 }
 
-static void qd_write_ssl_profile_map(qd_config_ssl_profile_t  *ssl_profile, qd_composed_field_t *out_body)
+static void qd_connection_manager_get_ssl_profile_attr(void* obj, int attr_id, qd_agent_request_t *request)
 {
-    if (out_body) {
-        qd_compose_start_map(out_body);
-        for (int col = 0; col < QD_SCHEMA_SSLPROFILE_ATTRIBUTES_ENUM_COUNT; col++)
-            qd_ssl_profile_insert_column(ssl_profile, col, out_body, true);
-        qd_compose_end_map(out_body);
-    }
+    qd_config_ssl_profile_t *ssl_profile = (qd_config_ssl_profile_t *)obj;
+    qd_ssl_profile_set_column(ssl_profile, attr_id, request);
 }
 
-qd_amqp_error_t qd_connection_manager_create_ssl_profile(qd_dispatch_t *qd, qd_field_iterator_t *name, qd_parsed_field_t *in_body, qd_composed_field_t *out_body)
+static void qd_connection_manager_read_ssl_profile(void *ctx, qd_agent_request_t *request)
 {
+    qd_dispatch_t *qd = (qd_dispatch_t*)ctx;
     qd_connection_manager_t *cm = qd->connection_manager;
 
+    qd_amqp_error_t status = QD_AMQP_CREATED;
+
+    qd_field_iterator_t     *name_iter      = qd_agent_get_request_name(request);
+    qd_field_iterator_t     *identity_iter  = qd_agent_get_request_identity(request);
+
+    if (!name_iter && !identity_iter) {
+        qd_log(cm->log_source, QD_LOG_INFO, "Cannot create SSL Profile. No name or identity provided");
+        status = QD_AMQP_BAD_REQUEST;
+        status.description = "No name or identity provided";
+        qd_agent_request_complete(qd->router->router_core, &status, request);
+        return;
+    }
+
+    qd_config_ssl_profile_t *ssl_profile = 0;
+
+    if (name_iter) {
+        ssl_profile = qd_find_ssl_profile_by_name_iterator(cm, name_iter);
+    }
+    else if (identity_iter) {
+        ssl_profile = qd_find_ssl_profile_by_identity_iterator(cm, identity_iter);
+    }
+
+    if(ssl_profile) {
+        qd_agent_request_success(request, ssl_profile);
+        qd_agent_request_complete(qd->router->router_core, &status, request);
+    }
+    else {
+        status = QD_AMQP_BAD_REQUEST;
+        status.description = "Cannot find SSL Profile with the given name or identity";
+        qd_agent_request_complete(qd->router->router_core, &status, request);
+    }
+
+
+}
+
+static void qd_connection_manager_delete_ssl_profile(void *ctx, qd_agent_request_t *request)
+{
+    qd_dispatch_t *qd = (qd_dispatch_t*)ctx;
+    qd_connection_manager_t *cm = qd->connection_manager;
+
+    qd_amqp_error_t status = QD_AMQP_NO_CONTENT;
+
+    qd_field_iterator_t     *name_iter      = qd_agent_get_request_name(request);
+    qd_field_iterator_t     *identity_iter  = qd_agent_get_request_identity(request);
+
+    if (!name_iter && !identity_iter) {
+        qd_log(cm->log_source, QD_LOG_INFO, "Cannot delete SSL Profile. No name or identity provided");
+        status = QD_AMQP_BAD_REQUEST;
+        status.description = "Cannot delete SSL Profile. No name or identity provided";
+        qd_agent_request_complete(qd->router->router_core, &status, request);
+        return;
+    }
+
+    qd_config_ssl_profile_t *ssl_profile = 0;
+
+    if (name_iter) {
+        ssl_profile = qd_find_ssl_profile_by_name_iterator(cm, name_iter);
+    }
+    else if (identity_iter) {
+        ssl_profile = qd_find_ssl_profile_by_identity_iterator(cm, identity_iter);
+    }
+
+    if(ssl_profile) {
+        bool freed = qd_config_ssl_profile_free(qd->connection_manager, ssl_profile);
+        if (freed) {
+            qd_agent_request_complete(qd->router->router_core, &status, request);
+        }
+        else {
+            status = QD_AMQP_BAD_REQUEST;
+            status.description = "SSL Profile is referenced by other listeners/connectors. First, delete the associated "
+                        "listeners/connectors before deleting the SSL Profile";
+            qd_agent_request_complete(qd->router->router_core, &status, request);
+        }
+
+    }
+    else {
+        status = QD_AMQP_BAD_REQUEST;
+        status.description = "Cannot find SSL Profile with the given name or identity";
+        qd_agent_request_complete(qd->router->router_core, &status, request);
+    }
+
+}
+
+static void qd_connection_manager_create_ssl_profile(void *ctx, qd_agent_request_t *request)
+{
+    qd_dispatch_t *qd = (qd_dispatch_t*)ctx;
+    qd_connection_manager_t *cm = qd->connection_manager;
+
+    qd_field_iterator_t     *name_iter      = qd_agent_get_request_name(request);
+
+    qd_amqp_error_t status = QD_AMQP_CREATED;
+
     //Check if an ssl profile with this name already exists.
-    qd_config_ssl_profile_t  *profile = qd_find_ssl_profile_by_name_iterator(cm, name);
+    qd_config_ssl_profile_t  *profile = qd_find_ssl_profile_by_name_iterator(cm, name_iter);
 
     if (profile) {
-        //qd_log(cm->log_source, QD_LOG_INFO, "SSL Profile with name %s already exists", profile_name);
-        qd_amqp_error_t          status = QD_AMQP_BAD_REQUEST;
+        qd_log(cm->log_source, QD_LOG_INFO, "SSL Profile with name %s already exists", profile->name);
+        status = QD_AMQP_BAD_REQUEST;
         status.description = "SSL Profile with name already exists";
-        return status;
+        qd_agent_request_complete(qd->router->router_core, &status, request);
+        return;
     }
 
     qd_config_ssl_profile_t *ssl_profile = NEW(qd_config_ssl_profile_t);
     DEQ_ITEM_INIT(ssl_profile);
-    DEQ_INSERT_TAIL(cm->config_ssl_profiles, ssl_profile);
 
-    ssl_profile->name                        = (char*)qd_field_iterator_copy(name);
-    ssl_profile->ssl_trusted_certificate_db  = qd_get_parsed_field_value(ssl_profile, in_body, QD_SCHEMA_SSLPROFILE_ATTRIBUTES_CERTDB);
-    ssl_profile->ssl_certificate_file        = qd_get_parsed_field_value(ssl_profile, in_body, QD_SCHEMA_SSLPROFILE_ATTRIBUTES_CERTFILE);
-    ssl_profile->ssl_private_key_file        = qd_get_parsed_field_value(ssl_profile, in_body, QD_SCHEMA_SSLPROFILE_ATTRIBUTES_KEYFILE);
-    ssl_profile->ssl_password_file           = qd_get_parsed_field_value(ssl_profile, in_body, QD_SCHEMA_SSLPROFILE_ATTRIBUTES_PASSWORDFILE);
-    ssl_profile->ssl_password                = qd_get_parsed_field_value(ssl_profile, in_body, QD_SCHEMA_SSLPROFILE_ATTRIBUTES_PASSWORD);
-    ssl_profile->ssl_uid_format              = qd_get_parsed_field_value(ssl_profile, in_body, QD_SCHEMA_SSLPROFILE_ATTRIBUTES_UIDFORMAT);
-    ssl_profile->ssl_display_name_file       = qd_get_parsed_field_value(ssl_profile, in_body, QD_SCHEMA_SSLPROFILE_ATTRIBUTES_DISPLAYNAMEFILE);
+
+    ssl_profile->name                        = (char*)qd_field_iterator_copy(name_iter);
+    ssl_profile->ssl_trusted_certificate_db  = qd_agent_request_get_string(request, QD_SCHEMA_SSLPROFILE_ATTRIBUTES_CERTDB);
+    ssl_profile->ssl_certificate_file        = qd_agent_request_get_string(request, QD_SCHEMA_SSLPROFILE_ATTRIBUTES_CERTFILE);
+    ssl_profile->ssl_private_key_file        = qd_agent_request_get_string(request, QD_SCHEMA_SSLPROFILE_ATTRIBUTES_KEYFILE);
+    ssl_profile->ssl_password_file           = qd_agent_request_get_string(request, QD_SCHEMA_SSLPROFILE_ATTRIBUTES_PASSWORDFILE);
+    ssl_profile->ssl_password                = qd_agent_request_get_string(request, QD_SCHEMA_SSLPROFILE_ATTRIBUTES_PASSWORD);
+    ssl_profile->ssl_uid_format              = qd_agent_request_get_string(request, QD_SCHEMA_SSLPROFILE_ATTRIBUTES_UIDFORMAT);
+    ssl_profile->ssl_display_name_file       = qd_agent_request_get_string(request, QD_SCHEMA_SSLPROFILE_ATTRIBUTES_DISPLAYNAMEFILE);
 
     sys_mutex_lock(qd->connection_manager->ssl_profile_lock);
     ssl_profile->ref_count = 0;
+    DEQ_INSERT_TAIL(cm->config_ssl_profiles, ssl_profile);
     sys_mutex_unlock(qd->connection_manager->ssl_profile_lock);
+
     qd_log(cm->log_source, QD_LOG_INFO, "Created SSL Profile with name %s ", ssl_profile->name);
 
-    qd_write_ssl_profile_map(ssl_profile, out_body);
+    qd_agent_request_success(request, ssl_profile);
 
-    return QD_AMQP_OK;
+    qd_agent_request_complete(qd->router->router_core, &status, request);
+}
+
+
+static void qd_connection_manager_query_ssl_profile(void *ctx, qd_agent_request_t *request)
+{
+    qd_dispatch_t *qd = (qd_dispatch_t*)ctx;
+
+    int offset = qd_agent_get_request_offset(request);
+    int count  = qd_agent_get_request_count(request);
+
+    qd_connection_manager_t *connection_manager = qd->connection_manager;
+
+    qd_amqp_error_t status = QD_AMQP_OK;
+
+    if(DEQ_SIZE(connection_manager->config_ssl_profiles) > 0) {
+        if (offset >= DEQ_SIZE(connection_manager->config_ssl_profiles)) {
+                qd_agent_request_complete(qd->router->router_core, &status, request);
+                return;
+        }
+
+        qd_config_ssl_profile_t *ssl_profile = DEQ_HEAD(connection_manager->config_ssl_profiles);
+        for (int i = 0; i < offset && ssl_profile; i++)
+            ssl_profile = DEQ_NEXT(ssl_profile);
+        assert(ssl_profile);
+
+        for (int j=0; j< count; j++) {
+            if (ssl_profile) {
+                qd_agent_request_success(request, ssl_profile);
+                ssl_profile = DEQ_NEXT(ssl_profile);
+            }
+        }
+        qd_agent_request_complete(qd->router->router_core, &status, request);
+    }
+    else {
+        // connection_manager does not have any associated qd_config_ssl_profile_t objects, send response
+        qd_agent_request_complete(qd->router->router_core, &status, request);
+    }
+
+}
+
+void register_ssl_profile_handlers(qd_agent_t *agent, void *ctx)
+{
+    qd_agent_register_handlers(ctx,
+                               agent,
+                               (int)QD_SCHEMA_ENTITY_TYPE_SSLPROFILE,
+                               qd_connection_manager_create_ssl_profile,
+                               qd_connection_manager_read_ssl_profile,
+                               0,
+                               qd_connection_manager_delete_ssl_profile,
+                               qd_connection_manager_query_ssl_profile,
+                               qd_connection_manager_get_ssl_profile_attr);
+
 }
 
 
@@ -613,6 +729,8 @@ bool qd_config_ssl_profile_free(qd_connection_manager_t *cm, qd_config_ssl_profi
     }
     sys_mutex_unlock(cm->ssl_profile_lock);
 
+    DEQ_REMOVE(cm->config_ssl_profiles, ssl_profile);
+
     free(ssl_profile->name);
     free(ssl_profile->ssl_password);
     free(ssl_profile->ssl_trusted_certificate_db);
@@ -653,87 +771,6 @@ void qd_connection_manager_delete_listener(qd_dispatch_t *qd, void *impl)
     }
     return false;
 }*/
-
-qd_amqp_error_t qd_connection_manager_delete_ssl_profile(qd_dispatch_t *qd,
-                                                         qd_field_iterator_t *name,
-                                                         qd_field_iterator_t *identity)
-{
-    qd_amqp_error_t status = QD_AMQP_OK;
-    while (true) {
-        if (!name && !identity) {
-            status = QD_AMQP_BAD_REQUEST;
-            status.description = "No name or identity provided";
-            break;
-        }
-        qd_config_ssl_profile_t *ssl_profile = 0;
-        if (identity) {
-            ssl_profile = qd_find_ssl_profile_by_identity_iterator(qd->connection_manager, identity);
-        }
-        else {
-            ssl_profile = qd_find_ssl_profile_by_name_iterator(qd->connection_manager, name);
-        }
-
-        if(ssl_profile) {
-            bool freed = qd_config_ssl_profile_free(qd->connection_manager, ssl_profile);
-            if (freed)
-                DEQ_REMOVE(qd->connection_manager->config_ssl_profiles, ssl_profile);
-            else {
-                status = QD_AMQP_BAD_REQUEST;
-                status.description = "SSL Profile is referenced by other listeners/connectors. Delete the associated "
-                            "listeners/connectors before deleting the SSL Profile";
-            }
-        }
-        else {
-            status = QD_AMQP_BAD_REQUEST;
-            status.description = "Cannot find SSL Profile with the given name or identity";
-        }
-        break;
-    }
-
-    return status;
-}
-
-qd_amqp_error_t qd_connection_manager_read_ssl_profile(qd_dispatch_t *qd,
-                                                       qd_field_iterator_t *name,
-                                                       qd_field_iterator_t *identity,
-                                                       qd_composed_field_t *out_body)
-{
-    qd_amqp_error_t status = QD_AMQP_OK;
-
-    while (true) {
-        if (!name && !identity) {
-            status = QD_AMQP_BAD_REQUEST;
-            status.description = "No name or identity provided";
-            break;
-        }
-        qd_config_ssl_profile_t *ssl_profile = 0;
-        if (identity) {
-            ssl_profile = qd_find_ssl_profile_by_identity_iterator(qd->connection_manager, identity);
-        }
-        else {
-            ssl_profile = qd_find_ssl_profile_by_name_iterator(qd->connection_manager, name);
-        }
-
-        if(ssl_profile)
-            qd_write_ssl_profile_map(ssl_profile, out_body);
-        else {
-            status = QD_AMQP_BAD_REQUEST;
-            status.description = "Cannot find SSL Profile with the given name or identity";
-        }
-        break;
-    }
-
-    return status;
-}
-
-qd_amqp_error_t qd_connection_manager_query_ssl_profile(qd_dispatch_t       *qd,
-                                                        int                  offset,
-                                                        int                  count,
-                                                        qd_parsed_field_t   *in_body,
-                                                        qd_composed_field_t *out_body)
-{
-    return QD_AMQP_OK;
-}
 
 void qd_connection_manager_delete_connector(qd_dispatch_t *qd, void *impl)
 {

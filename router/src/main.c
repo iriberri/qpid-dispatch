@@ -108,7 +108,6 @@ static void check(int fd) {
 
 static void main_process(const char *config_path, const char *python_pkgdir, int fd)
 {
-    printf ("In main_process\n");
     qd_error_clear();
     struct stat st;
     if (stat(python_pkgdir, &st))
@@ -121,7 +120,8 @@ static void main_process(const char *config_path, const char *python_pkgdir, int
     dispatch = qd_dispatch(python_pkgdir);
     check(fd);
     log_source = qd_log_source("MAIN"); /* Logging is initialized by qd_dispatch. */
-    qd_dispatch_load_config(dispatch, config_path);
+    //qd_dispatch_load_config(dispatch, config_path);
+    qd_dispatch_start_agent(dispatch, config_path);
     check(fd);
 
     (void)server_signal_handler; (void)thread_start_handler;(void)signal_handler;
@@ -142,6 +142,8 @@ static void main_process(const char *config_path, const char *python_pkgdir, int
         #endif
         close(fd);
     }
+
+    qd_dispatch_prepare(dispatch);
 
     qd_server_run(dispatch);
 

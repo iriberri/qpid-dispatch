@@ -209,6 +209,15 @@ int qd_parse_is_scalar(qd_parsed_field_t *field);
  */
 qd_parsed_field_t *qd_parse_value_by_key(qd_parsed_field_t *field, const char *key);
 
+/**
+ * Convenience Function - Return the value for a uint32_t key in a map contained in field.
+ *
+ * @param field The field pointer returned by qd_parse[_sub_{value,key}]
+ * @param key The key to search for in the map.
+ * @return The value field corresponding to the key or NULL.
+ */
+qd_parsed_field_t *qd_parse_value_by_int_index(qd_parsed_field_t *field, uint32_t key);
+
 ///@}
 
 #endif

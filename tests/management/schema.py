@@ -21,9 +21,9 @@
 #pylint: disable=wildcard-import,missing-docstring,too-many-public-methods
 
 import unittest, json
-from qpid_dispatch_internal.management.schema import Schema, BooleanType, EnumType, AttributeType, ValidationError, EnumValue, EntityType
+from qpid_dispatch_internal.management.schema.qd_schema import Schema, BooleanType, EnumType, AttributeType, ValidationError, EnumValue, EntityType
+from qpid_dispatch_internal.management.schema.deprecation import DeprecationHandler
 from qpid_dispatch_internal.compat import OrderedDict
-import collections
 
 def replace_od(thing):
     """Replace OrderedDict with dict"""
@@ -74,6 +74,21 @@ SCHEMA_1 = {
         }
     }
 }
+
+sections = [
+    [u'container', {u'workerThreads': 2, u'containerName': 'Qpid.Dispatch.Router.A',
+                    u'debugDump': '/home/user/test.txt', u'saslConfigPath': '/home/user',
+                    u'saslConfigName': 'testsaslConfigName'}],
+    [u'router', {u'mode': 'standalone', u'routerId': 'Router.A', u'mobileAddrMaxAge': 60}],
+    [u'listener', {u'addr': '0.0.0.0', u'port': 34567, u'authenticatePeer': 'no', u'port': 'amqp',
+                   u'allowNoSasl': 'yes', u'requirePeerAuth': 'yes', u'allowUnsecured': 'yes'}],
+    [u'connector', {u'addr': '0.0.0.0', u'port': 34568, u'mobileAddrMaxAge': 60}],
+    [u'linkRoutePattern', {u'prefix': 'org.apache', u'connector': 'connector-1', u'dir': 'both'}],
+    [u'linkRoutePattern', {u'prefix': 'qpid.dispatch', u'connector': 'connector-2', u'dir': 'in'}],
+    [u'linkRoutePattern', {u'prefix': 'test.dispatch', u'connector': 'connector-3', u'dir': 'out'}],
+    [u'fixedAddress', {u'prefix': 'closest', u'fanout': 'single', u'bias': 'closest'}]
+]
+
 
 class SchemaTest(unittest.TestCase):
 
@@ -147,6 +162,20 @@ class SchemaTest(unittest.TestCase):
         m = [{'type': 'container', 'name':'x'},
              {'type': 'listener', 'name':'y'}]
         s.validate_all(m)
+
+    def test_deprecation_handler(self):
+        secs = DeprecationHandler(sections).process()
+        self.assertEqual(secs,
+                         [[u'router', {'debugDump': '/home/user/test.txt', 'workerThreads': 2,
+                                       'saslConfigPath': '/home/user', u'mode': 'standalone',
+                                       'saslConfigName': 'testsaslConfigName', 'mobileAddrMaxAge': 60, 'id': 'Router.A'}],
+                          [u'listener', {'requireEncryption': 'yes', 'host': '0.0.0.0', u'authenticatePeer': 'yes', u'port': 'amqp'}],
+                          [u'connector', {'host': '0.0.0.0', u'mobileAddrMaxAge': 60, u'port': 34568}],
+                          [u'router.config.address', {'prefix': 'closest', 'distribution': 'closest'}],
+                          [u'router.config.linkRoute', {'prefix': 'org.apache', 'connection': 'connector-1', 'dir': 'in'}],
+                          [u'router.config.linkRoute', {'prefix': 'org.apache', 'connection': 'connector-1', 'dir': 'out'}],
+                          [u'router.config.linkRoute', {'prefix': 'qpid.dispatch', 'connection': 'connector-2', 'dir': 'in'}],
+                          [u'router.config.linkRoute', {'prefix': 'test.dispatch', 'connection': 'connector-3', 'dir': 'out'}]])
 
     def test_schema_entity(self):
         s = Schema(**SCHEMA_1)

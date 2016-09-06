@@ -84,6 +84,7 @@ from qpid_dispatch.management.error import ManagementError, OK, CREATED, NO_CONT
     BadRequestStatus, InternalServerErrorStatus, NotImplementedStatus, NotFoundStatus, ForbiddenStatus
 from qpid_dispatch.management.entity import camelcase
 from qpid_dispatch_internal.management.schema.qd_schema import ValidationError, SchemaEntity, EntityType, QdSchema
+from qpid_dispatch_internal.management.schema.deprecation import DeprecationHandler
 from qpid_dispatch_internal.router.message import Message
 from qpid_dispatch_internal.router.address import Address
 from qpid_dispatch_internal.policy.policy_manager import PolicyManager
@@ -754,6 +755,7 @@ class ManagementAgent:
     """
 
     def __init__(self, address, agent_adapter, config_file, schema=QdSchema(), raw_json=False):
+        self.log_adapter = LogAdapter("AGENT")
         self.address = address
         self.agent_adapter = agent_adapter
         self.schema = schema
@@ -769,7 +771,6 @@ class ManagementAgent:
                 raise Exception, "Cannot load configuration file %s: %s" % (config_file, e), sys.exc_info()[2]
         else:
             self.entities = []
-        self.log_adapter = LogAdapter("AGENT")
 
         self.management = self.create_entity({"type": "management"})
         # self.add_entity(self.management)
@@ -798,9 +799,12 @@ class ManagementAgent:
         for s in sections:
             s[0] = camelcase(s[0])
             s[1] = dict((camelcase(k), v) for k, v in s[1].iteritems())
-            if s[0] == "address":   s[0] = "router.config.address"
-            if s[0] == "linkRoute": s[0] = "router.config.linkRoute"
-            if s[0] == "autoLink":  s[0] = "router.config.autoLink"
+            if s[0] == "address":
+                s[0] = u"router.config.address"
+            if s[0] == "linkRoute":
+                s[0] = u"router.config.linkRoute"
+            if s[0] == "autoLink":
+                s[0] = u"router.config.autoLink"
         return sections
 
     @staticmethod
@@ -814,12 +818,14 @@ class ManagementAgent:
         sections = json.loads(js_text)
         return sections
 
-    def post_request(self, cid, reply_to,
+    def post_request(self,
+                     operation_ordinality,
+                     entity_type_ordinality,
+                     cid=None,
                      name=None,
                      identity=None,
                      body=None,
-                     operation_ordinality=None,
-                     entity_type_ordinality=None,
+                     reply_to=None,
                      count=0,
                      offset=0):
         """
@@ -837,6 +843,10 @@ class ManagementAgent:
 
     def _transform_attributes(self, adapter):
         transformed = {}
+
+        # If there are any deprecated items, replace them with the corresponding non-deprecated equivalents.
+        #remove_deprecated(adapter)
+
         # adapter.attributes has something like this -
         # {u'mobileAddrMaxAge': 60, u'raIntervalFlux': 4, u'workerThreads': 4, u'helloInterval': 1, u'area': '0',
         # u'helloMaxAge': 3, u'saslConfigName': 'qdrouterd', u'remoteLsMaxAge': 60, u'raInterval': 30, u'mode': 0,
@@ -852,8 +862,7 @@ class ManagementAgent:
 
     def _create_config_entities(self):
         for adapter in self.adapters:
-            self.post_request(cid=None, reply_to=None,
-                              operation_ordinality=self.schema.all_operation_defs.get('CREATE').ordinality,
+            self.post_request(operation_ordinality=self.schema.all_operation_defs.get('CREATE').ordinality,
                               entity_type_ordinality=adapter.entity_type.ordinality,
                               body=self._transform_attributes(adapter))
 
@@ -861,7 +870,6 @@ class ManagementAgent:
         return self.config_types
 
     def entity_adapters(self, entities):
-
         local_entities = list(entities)
 
         for entity in local_entities:
@@ -882,10 +890,16 @@ class ManagementAgent:
                 self.load(f, raw_json)
         else:
             sections = self._parserawjson(source) if raw_json else self._parse(source)
+
             # Add missing singleton sections
             for et in self.get_config_types():
-                if et.singleton and not [s for s in sections if s[0] == et.short_name]:
+                if not et.deprecated and et.singleton and not [s for s in sections if s[0] == et.short_name]:
                     sections.append((et.short_name, {}))
+
+            # Replace deprecated items with corresponding non-deprecated equivalents.
+            sections = DeprecationHandler(sections, self.log_adapter).process()
+
+            print sections
 
             self.entities = [dict(type=self.schema.entity_type(self.schema.long_name(s[0])), **s[1]) for s in sections]
             #self.schema.validate_all(self.entities)

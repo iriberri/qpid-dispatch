@@ -25,8 +25,9 @@
 #include <qpid/dispatch/compose.h>
 #include <qpid/dispatch/dispatch.h>
 #include <qpid/dispatch/connection_manager.h>
+#include <qpid/dispatch/agent.h>
 #include "dispatch_private.h"
-#include "agent.h"
+#include "schema_enum.h"
 
 const char *ENTITY = "entityType";
 const char *TYPE = "type";
@@ -46,10 +47,8 @@ const unsigned char *address_entity_type        = (unsigned char*) "org.apache.q
 const unsigned char *link_entity_type           = (unsigned char*) "org.apache.qpid.dispatch.router.link";
 const unsigned char *console_entity_type        = (unsigned char*) "org.apache.qpid.dispatch.console";
 
-const char * const status_description = "statusDescription";
 const char * const correlation_id = "correlation-id";
 const char * const results = "results";
-const char * const status_code = "statusCode";
 
 const char * MANAGEMENT_INTERNAL = "_local/$_management_internal";
 
@@ -100,145 +99,8 @@ static qd_management_context_t* qd_management_context(qd_field_iterator_t       
     return ctx;
 }
 
-static void qd_parse_agent_request(qd_agent_request_t       *request,
-                                   qd_schema_entity_type_t  *entity_type,
-                                   qd_field_iterator_t      **cid,
-                                   qd_field_iterator_t      **reply_to,
-                                   qd_field_iterator_t      **name_iter,
-                                   qd_field_iterator_t      **identity_iter,
-                                   qd_parsed_field_t        **body)
-{
-    qd_buffer_list_t *buffer_list = get_request_buffers(request);
-    qd_field_iterator_t *iter = qd_address_iterator_buffer(DEQ_HEAD(*buffer_list), 0, qd_buffer_list_length(buffer_list), ITER_VIEW_ALL);
-    *entity_type = get_request_entity_type(request);
-    *cid = qd_parse_raw(qd_parse(iter));
-    *reply_to = qd_parse_raw(qd_parse(iter));
-    *name_iter = qd_parse_raw(qd_parse(iter));
-    *identity_iter = qd_parse_raw(qd_parse(iter));
-    *body = qd_parse(iter);
-}
-
-
-/**
- * Sets the error status on a new composed field.
- */
-static void qd_set_response_status(const qd_amqp_error_t *error, qd_composed_field_t **field)
-{
-    //
-    // Insert appropriate success or error
-    //
-    *field = qd_compose(QD_PERFORMATIVE_APPLICATION_PROPERTIES, *field);
-    qd_compose_start_map(*field);
-
-    qd_compose_insert_string(*field, status_description);
-    qd_compose_insert_string(*field, error->description);
-
-    qd_compose_insert_string(*field, status_code);
-    qd_compose_insert_uint(*field, error->status);
-
-    qd_compose_end_map(*field);
-}
-
-
-static void qd_set_properties(qd_field_iterator_t *correlation_id,
-                              qd_field_iterator_t *reply_to,
-                              qd_composed_field_t **fld)
-{
-    // Set the correlation_id and reply_to on fld
-    *fld = qd_compose(QD_PERFORMATIVE_PROPERTIES, 0);
-    qd_compose_start_list(*fld);
-    qd_compose_insert_null(*fld);                           // message-id
-    qd_compose_insert_null(*fld);                           // user-id
-    qd_compose_insert_string_iterator(*fld, reply_to);     // to
-    qd_compose_insert_null(*fld);                           // subject
-    qd_compose_insert_null(*fld);
-    qd_compose_insert_typed_iterator(*fld, correlation_id);
-    qd_compose_end_list(*fld);
-    qd_field_iterator_free(correlation_id);
-}
-
-
-void send_response(void *ctx,
-                   qd_field_iterator_t *reply_to,
-                   qd_field_iterator_t *correlation_id,
-                   const qd_amqp_error_t *status,
-                   qd_composed_field_t *out_body)
-{
-    qd_composed_field_t *fld = 0;
-
-    // Start composing the message.
-    // First set the properties on the message like reply_to, correlation-id etc.
-    qd_set_properties(correlation_id, reply_to, &fld);
-
-    // Second, set the status on the message, QD_AMQP_OK or QD_AMQP_BAD_REQUEST and so on.
-    qd_set_response_status(status, &fld);
-
-    qd_message_t *response = qd_message();
-    qdr_core_t *core = (qdr_core_t*)ctx; // This is not right since this is also used by non-core stuff
-
-    // Finally, compose and send the message.
-    qd_message_compose_3(response, fld, out_body);
-    qdr_send_to1(core, response, reply_to, true, false);
-
-    qd_compose_free(fld);
-
-}
-
-void qd_create_ssl_profile(qd_agent_request_t *request)
-{
-    qd_schema_entity_type_t entity_type;
-    qd_field_iterator_t     *correlation_id;
-    qd_field_iterator_t     *reply_to;
-    qd_field_iterator_t     *name_iter;
-    qd_field_iterator_t     *identity_iter;
-    qd_parsed_field_t       *in_body;
-
-    qd_parse_agent_request(request, &entity_type, &correlation_id, &reply_to, &name_iter, &identity_iter, &in_body);
-
-    qd_dispatch_t *qd = (qd_dispatch_t*)get_request_context(request);
-
-    qd_composed_field_t *out_body = qd_compose(QD_PERFORMATIVE_BODY_AMQP_VALUE, 0);
-
-    qd_amqp_error_t status = qd_connection_manager_create_ssl_profile(qd, name_iter, in_body, out_body);
-
-    send_response(get_request_context(request), reply_to, correlation_id, &status, out_body);
-}
-
-
-void qd_query_ssl_profile(qd_agent_request_t *request)
-{
-    qd_schema_entity_type_t entity_type;
-    qd_field_iterator_t     *correlation_id;
-    qd_field_iterator_t     *reply_to;
-    qd_field_iterator_t     *name_iter;
-    qd_field_iterator_t     *identity_iter;
-    qd_parsed_field_t       *in_body;
-
-    qd_parse_agent_request(request, &entity_type, &correlation_id, &reply_to, &name_iter, &identity_iter, &in_body);
-
-    qd_dispatch_t *qd = (qd_dispatch_t*)get_request_context(request);
-
-    qd_composed_field_t *out_body = qd_compose(QD_PERFORMATIVE_BODY_AMQP_VALUE, 0);
-
-    qd_amqp_error_t status = qd_connection_manager_query_ssl_profile(qd, get_request_offset(request), get_request_count(request), in_body, out_body);
-
-    send_response(get_request_context(request), reply_to, correlation_id, &status, out_body);
-}
-
-
-void qd_delete_ssl_profile(qd_agent_request_t *request)
-{
-    qd_schema_entity_type_t entity_type;
-    qd_field_iterator_t     *correlation_id;
-    qd_field_iterator_t     *reply_to;
-    qd_field_iterator_t     *name_iter;
-    qd_field_iterator_t     *identity_iter;
-    qd_parsed_field_t       *in_body;
-
-    qd_parse_agent_request(request, &entity_type, &correlation_id, &reply_to, &name_iter, &identity_iter, &in_body);
-}
-
 static void qd_manage_response_handler(void *context, const qd_amqp_error_t *status, bool more)
+//static void qd_manage_response_handler(void *context, const qd_amqp_error_t *status, bool more)
 {
     qd_management_context_t *mgmt_ctx = (qd_management_context_t*) context;
 
@@ -271,8 +133,10 @@ static void qd_manage_response_handler(void *context, const qd_amqp_error_t *sta
         }
     }
 
+    //qd_agent_success(mgmt_ctx->core, request, 0);
+
     //Send the response to the caller
-    send_response(mgmt_ctx->core, mgmt_ctx->reply_to, mgmt_ctx->correlation_id, status, mgmt_ctx->out_body);
+    //send_response(mgmt_ctx->core, mgmt_ctx->reply_to, mgmt_ctx->correlation_id, status, mgmt_ctx->out_body);
 
     qd_message_free(mgmt_ctx->response);
     qd_compose_free(mgmt_ctx->out_body);
@@ -281,19 +145,16 @@ static void qd_manage_response_handler(void *context, const qd_amqp_error_t *sta
 }
 
 
-void qd_core_agent_query_handler(qd_agent_request_t *request)
+void qd_core_agent_query_handler(void *ctx, qd_agent_request_t *request)
 {
-    qd_schema_entity_type_t  entity_type;
-    qd_field_iterator_t     *correlation_id;
-    qd_field_iterator_t     *reply_to;
-    qd_field_iterator_t     *name_iter;
-    qd_field_iterator_t     *identity_iter;
-    qd_parsed_field_t       *in_body;
+    qd_schema_entity_type_t  entity_type    = qd_agent_get_request_entity_type(request);
+    qd_field_iterator_t     *correlation_id = qd_agent_get_request_correlation_id(request);
+    qd_field_iterator_t     *reply_to       = qd_agent_get_request_reply_to(request);
+    qd_parsed_field_t       *in_body        = qd_agent_get_request_body(request);
 
-    qd_parse_agent_request(request, &entity_type, &correlation_id, &reply_to, &name_iter, &identity_iter, &in_body);
-    int count = get_request_count(request);
-    int offset = get_request_offset(request);
-    qdr_core_t *core = (qdr_core_t*)get_request_context(request);
+    int count = qd_agent_get_request_count(request);
+    int offset = qd_agent_get_request_offset(request);
+    qdr_core_t *core = (qdr_core_t*)ctx;
 
     // Call local function that creates and returns a local qd_management_context_t object containing the values passed in.
     qd_management_context_t *mgmt_ctx = qd_management_context(reply_to, correlation_id, 0, core, QD_SCHEMA_ENTITY_OPERATION_QUERY, count);
@@ -318,7 +179,7 @@ void qd_core_agent_query_handler(qd_agent_request_t *request)
 
     // Set the callback function.
     qdr_manage_handler(core, qd_manage_response_handler);
-    mgmt_ctx->query = qdr_manage_query(core, mgmt_ctx, entity_type, attribute_names_parsed_field, field);
+    mgmt_ctx->query = qdr_manage_query(core, mgmt_ctx, entity_type, attribute_names_parsed_field, mgmt_ctx->out_body);
 
     //Add the attribute names
     qdr_query_add_attribute_names(mgmt_ctx->query); //this adds a list of attribute names like ["attribute1", "attribute2", "attribute3", "attribute4",]
@@ -330,18 +191,16 @@ void qd_core_agent_query_handler(qd_agent_request_t *request)
     qd_parse_free(in_body);
 }
 
-void qd_core_agent_create_handler(qd_agent_request_t *request)
+
+void qd_core_agent_create_handler(void *ctx, qd_agent_request_t *request)
 {
-    qd_schema_entity_type_t entity_type;
-    qd_field_iterator_t     *correlation_id;
-    qd_field_iterator_t     *reply_to;
-    qd_field_iterator_t     *name_iter;
-    qd_field_iterator_t     *identity_iter;
-    qd_parsed_field_t       *in_body;
+    qd_schema_entity_type_t  entity_type    = qd_agent_get_request_entity_type(request);
+    qd_field_iterator_t     *name_iter      = qd_agent_get_request_name(request);
+    qd_field_iterator_t     *correlation_id = qd_agent_get_request_correlation_id(request);
+    qd_field_iterator_t     *reply_to       = qd_agent_get_request_reply_to(request);
+    qd_parsed_field_t       *in_body        = qd_agent_get_request_body(request);
 
-    qd_parse_agent_request(request, &entity_type, &correlation_id, &reply_to, &name_iter, &identity_iter, &in_body);
-
-    qdr_core_t *core = (qdr_core_t*)get_request_context(request);
+    qdr_core_t *core = (qdr_core_t*)ctx;
     // Set the callback function.
     qdr_manage_handler(core, qd_manage_response_handler);
 
@@ -352,18 +211,15 @@ void qd_core_agent_create_handler(qd_agent_request_t *request)
 
 }
 
-void qd_core_agent_read_handler(qd_agent_request_t *request)
+void qd_core_agent_read_handler(void *ctx, qd_agent_request_t *request)
 {
-    qd_schema_entity_type_t  entity_type;
-    qd_field_iterator_t     *correlation_id;
-    qd_field_iterator_t     *reply_to;
-    qd_field_iterator_t     *name_iter;
-    qd_field_iterator_t     *identity_iter;
-    qd_parsed_field_t       *in_body;
+    qd_schema_entity_type_t  entity_type    = qd_agent_get_request_entity_type(request);
+    qd_field_iterator_t     *name_iter      = qd_agent_get_request_name(request);
+    qd_field_iterator_t     *identity_iter  = qd_agent_get_request_identity(request);
+    qd_field_iterator_t     *correlation_id = qd_agent_get_request_correlation_id(request);
+    qd_field_iterator_t     *reply_to       = qd_agent_get_request_reply_to(request);
 
-    qd_parse_agent_request(request, &entity_type, &correlation_id, &reply_to, &name_iter, &identity_iter, &in_body);
-
-    qdr_core_t *core = (qdr_core_t*)get_request_context(request);
+    qdr_core_t *core = (qdr_core_t*)ctx;
 
     // Set the callback function.
     qdr_manage_handler(core, qd_manage_response_handler);
@@ -376,18 +232,16 @@ void qd_core_agent_read_handler(qd_agent_request_t *request)
 }
 
 
-void qd_core_agent_update_handler(qd_agent_request_t *request)
+void qd_core_agent_update_handler(void *ctx, qd_agent_request_t *request)
 {
-    qd_schema_entity_type_t  entity_type;
-    qd_field_iterator_t     *correlation_id;
-    qd_field_iterator_t     *reply_to;
-    qd_field_iterator_t     *name_iter;
-    qd_field_iterator_t     *identity_iter;
-    qd_parsed_field_t       *in_body;
+    qd_schema_entity_type_t  entity_type    = qd_agent_get_request_entity_type(request);
+    qd_field_iterator_t     *name_iter      = qd_agent_get_request_name(request);
+    qd_field_iterator_t     *identity_iter  = qd_agent_get_request_identity(request);
+    qd_field_iterator_t     *correlation_id = qd_agent_get_request_correlation_id(request);
+    qd_field_iterator_t     *reply_to       = qd_agent_get_request_reply_to(request);
+    qd_parsed_field_t       *in_body        = qd_agent_get_request_body(request);
 
-    qd_parse_agent_request(request, &entity_type, &correlation_id, &reply_to, &name_iter, &identity_iter, &in_body);
-
-    qdr_core_t *core = (qdr_core_t*)get_request_context(request);
+    qdr_core_t *core = (qdr_core_t*)ctx;
 
     qd_management_context_t *mgmt_ctx = qd_management_context(reply_to, correlation_id, 0, core, QD_SCHEMA_ENTITY_OPERATION_UPDATE, 0);
 
@@ -395,18 +249,15 @@ void qd_core_agent_update_handler(qd_agent_request_t *request)
 }
 
 
-void qd_core_agent_delete_handler(qd_agent_request_t *request)
+void qd_core_agent_delete_handler(void *ctx, qd_agent_request_t *request)
 {
-    qd_schema_entity_type_t  entity_type;
-    qd_field_iterator_t     *correlation_id;
-    qd_field_iterator_t     *reply_to;
-    qd_field_iterator_t     *name_iter;
-    qd_field_iterator_t     *identity_iter;
-    qd_parsed_field_t       *in_body;
+    qd_schema_entity_type_t  entity_type    = qd_agent_get_request_entity_type(request);
+    qd_field_iterator_t     *name_iter      = qd_agent_get_request_name(request);
+    qd_field_iterator_t     *identity_iter  = qd_agent_get_request_identity(request);
+    qd_field_iterator_t     *correlation_id = qd_agent_get_request_correlation_id(request);
+    qd_field_iterator_t     *reply_to       = qd_agent_get_request_reply_to(request);
 
-    qd_parse_agent_request(request, &entity_type, &correlation_id, &reply_to, &name_iter, &identity_iter, &in_body);
-
-    qdr_core_t *core = (qdr_core_t*)get_request_context(request);
+    qdr_core_t *core = (qdr_core_t*)ctx;
 
     // Set the callback function.
     qdr_manage_handler(core, qd_manage_response_handler);
