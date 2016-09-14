@@ -23,7 +23,7 @@
 #include <qpid/dispatch/bitmask.h>
 #include <qpid/dispatch/compose.h>
 #include <qpid/dispatch/parse.h>
-#include <qpid/dispatch/router.h>
+
 
 
 /**
@@ -33,6 +33,7 @@
  */
 
 typedef struct qdr_core_t         qdr_core_t;
+#include <qpid/dispatch/router.h>
 typedef struct qdr_subscription_t qdr_subscription_t;
 typedef struct qdr_connection_t   qdr_connection_t;
 typedef struct qdr_link_t         qdr_link_t;

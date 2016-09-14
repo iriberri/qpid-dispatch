@@ -74,6 +74,7 @@ from cProfile import Profile
 from cStringIO import StringIO
 from ctypes import c_void_p, py_object, c_long
 from subprocess import Popen
+from ..compat import OrderedDict
 from ..dispatch import IoAdapter, LogAdapter, LOG_INFO, LOG_WARNING, LOG_DEBUG, LOG_ERROR, TREATMENT_ANYCAST_CLOSEST
 from qpid_dispatch.management.error import ManagementError, OK, CREATED, NO_CONTENT, STATUS_TEXT, \
     BadRequestStatus, InternalServerErrorStatus, NotImplementedStatus, NotFoundStatus, ForbiddenStatus
@@ -83,7 +84,6 @@ from .qdrouter import QdSchema
 from ..router.message import Message
 from ..router.address import Address
 from ..policy.policy_manager import PolicyManager
-
 
 def dictstr(d):
     """Stringify a dict in the form 'k=v, k=v ...' instead of '{k:v, ...}'"""
@@ -230,7 +230,7 @@ class EntityAdapter(SchemaEntity):
     def __str__(self):
         keys = sorted(self.attributes.keys())
         # If the attribute is hidden the attribute value will show up as stars ('*******').
-        return "Entity(%s)" % ", ".join("%s=%s" % (k, '*******' if self.entity_type.attribute(k).hidden else self.attributes[k]) for k in keys)
+        return "EntityAdapter(%s)" % ", ".join("%s=%s" % (k, '*******' if self.entity_type.attribute(k).hidden else self.attributes[k]) for k in keys)
 
 
 class ContainerEntity(EntityAdapter):
@@ -815,8 +815,9 @@ class Agent(object):
             try:
                 self.entities.refresh_from_c()
                 self.log(LOG_DEBUG, "Agent request %s"% request)
-                status, body = self.handle(request)
-                self.respond(request, status=status, body=body)
+                #status, body = self.handle(request)
+                self.handle(request)
+                #self.respond(request, status=status, body=body)
             except ManagementError, e:
                 error(e, format_exc())
             except ValidationError, e:
@@ -834,19 +835,61 @@ class Agent(object):
         Dispatch management node requests to self, entity requests to the entity.
         @return: (response-code, body)
         """
+        print 'Control in handle()'
         operation = required_property('operation', request)
         if operation.lower() == 'create':
             # Create requests are entity requests but must be handled by the agent since
             # the entity does not yet exist.
             return self.create(request)
-        else:
-            target = self.find_entity(request)
-            target.entity_type.allowed(operation, request.body)
-            try:
-                method = getattr(target, operation.lower().replace("-", "_"))
-            except AttributeError:
-                not_implemented(operation, target.type)
-            return method(request)
+        elif operation.lower() == 'delete':
+            print 'request.properties ', request.properties
+            requested_type = request.properties.get('type')
+            print 'requested_type ', requested_type
+            et = self.schema.entity_type(requested_type)
+            print 'et ', et
+            adapter = self.entity_adapter(et, None)
+            print 'adapter ', adapter
+
+            if requested_type == 'org.apache.qpid.dispatch.sslProfile':
+                from ..test_post import ManagementAgent
+                print 'calling management_agent.post_request'
+
+                ManagementAgent.management_agent.post_request(self.schema.all_operation_defs.get('DELETE').ordinality,
+                                                              adapter.entity_type.ordinality,
+                                                              cid=request.correlation_id,
+                                                              name=request.properties.get('name'),
+                                                              body=self._transform_attributes(adapter),
+                                                              reply_to=request.reply_to)
+        elif operation.lower() == 'query':
+            from ..test_post import ManagementAgent
+            print 'calling management_agent.post_request'
+            ManagementAgent.management_agent.post_request(self.schema.all_operation_defs.get('QUERY').ordinality,
+                                                          6,
+                                                          cid=request.correlation_id,
+                                                          name=request.properties.get('name'),
+                                                          body=None,
+                                                          reply_to=request.reply_to)
+        elif operation.lower() == 'read':
+            from ..test_post import ManagementAgent
+            print 'calling management_agent.post_request'
+            ManagementAgent.management_agent.post_request(self.schema.all_operation_defs.get('READ').ordinality,
+                                                          6,
+                                                          cid=request.correlation_id,
+                                                          name=request.properties.get('name'),
+                                                          body=None,
+                                                          reply_to=request.reply_to)
+
+            #target = self.find_entity(request)
+            #print 'Operation not create 1'
+            #target.entity_type.allowed(operation, request.body)
+            #print 'Operation not create 2'
+            #try:
+            #    method = getattr(target, operation.lower().replace("-", "_"))
+            #except AttributeError:
+            #    not_implemented(operation, target.type)
+
+            #print 'method ', method
+            #return method(request)
 
     def _create(self, attributes):
         """Create an entity, called externally or from configuration file."""
@@ -858,6 +901,35 @@ class Agent(object):
         else:
             self.add_entity(entity)
         return entity
+
+    def _transform_attributes(self, adapter):
+        transformed = OrderedDict()
+
+        # If there are any deprecated items, replace them with the corresponding non-deprecated equivalents.
+        #remove_deprecated(adapter)
+
+        # adapter.attributes has something like this -
+        # {u'mobileAddrMaxAge': 60, u'raIntervalFlux': 4, u'workerThreads': 4, u'helloInterval': 1, u'area': '0',
+        # u'helloMaxAge': 3, u'saslConfigName': 'qdrouterd', u'remoteLsMaxAge': 60, u'raInterval': 30, u'mode': 0,
+        # 'type': 'org.apache.qpid.dispatch.router', u'id': 'Router.A'}
+        # We want to create a new dict with the keys as the ordinality of the respective keys from the above dict
+        # like this - {0: 'Router.A', 1: 0, 2: '0', 3: 1, 4: 3, 5: 30, 6: 4, 7: 60, 11: 4, 14: 'qdrouterd', 16: 60}
+        #
+        print 'adapter.attributes ', adapter.attributes
+        print 'adapter.entity_type.attributes ', adapter.entity_type.attributes
+
+        for key in adapter.entity_type.attributes.keys():
+            attribute = adapter.entity_type.attributes.get(key)
+            print 'key, ordinality ', key, attribute.ordinality
+
+        for key in adapter.attributes.keys():
+            if key == 'type':
+                continue
+            transformed[adapter.entity_type.attributes.get(key).ordinality] = adapter.attributes.get(key)
+        return transformed
+
+    def entity_adapter(self, entity_type, attributes):
+        return EntityAdapter(self, entity_type, attributes=attributes, validate=True)
 
     def create(self, request):
         """
@@ -877,9 +949,20 @@ class Agent(object):
         if attributes.get('type') is None:
             raise BadRequestStatus("No 'type' attribute in %s" % attributes)
         et = self.schema.entity_type(attributes['type'])
-        et.allowed("CREATE", attributes)
+        et.allowed("CREATE")
         et.create_check(attributes)
-        return (CREATED, self._create(attributes).attributes)
+
+        adapter = self.entity_adapter(et, attributes)
+        if request.properties['type'] == 'org.apache.qpid.dispatch.sslProfile':
+            from ..test_post import ManagementAgent
+            ManagementAgent.management_agent.post_request(self.schema.all_operation_defs.get('CREATE').ordinality,
+                                                          adapter.entity_type.ordinality,
+                                                          cid=request.correlation_id,
+                                                          name=attributes['name'],
+                                                          body=self._transform_attributes(adapter),
+                                                          reply_to=request.reply_to)
+        else:
+            return (CREATED, self._create(attributes).attributes)
 
     def configure(self, attributes):
         """Created via configuration file"""

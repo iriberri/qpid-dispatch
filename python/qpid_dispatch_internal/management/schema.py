@@ -208,7 +208,7 @@ class AttributeType(object):
 
     def __init__(self, name, type=None, defined_in=None, default=None,
                  required=False, unique=False, hidden=False, deprecated=False,
-                 value=None, description="", create=False, update=False, graph=False):
+                 value=None, description="", create=False, update=False, graph=False, ordinality=0):
         """
         See L{AttributeType} instance variables.
         """
@@ -224,6 +224,7 @@ class AttributeType(object):
             self.value = value
             self.unique = unique
             self.description = description
+            self.ordinality = ordinality
             if self.value is not None and self.default is not None:
                 raise ValidationError("Attribute '%s' has default value and fixed value" %
                                       self.name)
@@ -298,10 +299,11 @@ class MessageDef(object):
 
 class OperationDef(object):
     """An operation definition"""
-    def __init__(self, name, description=None, request=None, response=None):
+    def __init__(self, name, description=None, request=None, response=None, ordinality=None):
         try:
             self.name = name
             self.description = description
+            self.ordinality = ordinality
             self.request = self.response = None
             if request: self.request = MessageDef(**request)
             if response: self.response = MessageDef(**response)
@@ -321,7 +323,7 @@ class EntityType(object):
     @ivar referential: True if an entity can be referred to by name from another entity.
     """
     def __init__(self, name, schema, attributes=None, operations=None, operationDefs=None, description="",
-                 fullName=True, singleton=False, deprecated=False, extends=None, referential=False, **kwargs):
+                 fullName=True, singleton=False, deprecated=False, extends=None, referential=False, ordinality=0, **kwargs):
         """
         @param name: name of the entity type.
         @param schema: schema for this type.
@@ -352,6 +354,7 @@ class EntityType(object):
             self.singleton = singleton
             self.deprecated = deprecated
             self.referential = referential
+            self.ordinality = ordinality
             self._init = False      # Have not yet initialized from base and attributes.
             # Operation definitions
             self.operation_defs = dict((name, OperationDef(name, **op))
@@ -384,6 +387,11 @@ class EntityType(object):
         if other.name == 'entity':
             # Fill in entity "type" attribute automatically.
             self.attributes["type"]["value"] = self.name
+
+        ordinality = 0
+        for attrib in self.attributes.values():
+            attrib.ordinality = ordinality
+            ordinality += 1
 
     def extends(self, base): return base in self.all_bases
 
@@ -433,7 +441,7 @@ class EntityType(object):
 
         return attributes
 
-    def allowed(self, op, body):
+    def allowed(self, op):
         """Raise exception if op is not a valid operation on entity."""
         op = op.upper()
         if not op in self.operations:
@@ -504,10 +512,20 @@ class Schema(object):
         self.entity_types = parsedefs(EntityType, entityTypes)
 
         self.all_attributes = set()
+        ordinality = 0
+        operation_def_ordinality = 0
+        self.all_operation_defs = OrderedDict()
 
         for e in self.entity_types.itervalues():
             e.init()
+            e.ordinality = ordinality
+            for key in e.operation_defs:
+                op_def = e.operation_defs[key]
+                op_def.ordinality = operation_def_ordinality
+                operation_def_ordinality += 1
+                self.all_operation_defs[key] = op_def
             self.all_attributes.update(e.attributes.keys())
+            ordinality += 1
 
     def short_name(self, name):
         """Remove prefix from name if present"""

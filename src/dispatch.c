@@ -213,6 +213,9 @@ qd_error_t qd_dispatch_prepare(qd_dispatch_t *qd)
     qd->router             = qd_router(qd, qd->router_mode, qd->router_area, qd->router_id);
     qd->connection_manager = qd_connection_manager(qd);
     qd->policy             = qd_policy(qd);
+    qd->new_agent          = qd_agent(qd, "$management_new", "/hello/world");
+    qd_agent_start(qd->new_agent);
+
     return qd_error_code();
 }
 

@@ -23,7 +23,9 @@
 #include <qpid/dispatch/amqp.h>
 #include "compose_private.h"
 #include <memory.h>
+#include <inttypes.h>
 #include <string.h>
+#include <stdio.h>
 
 ALLOC_DEFINE(qd_composite_t);
 ALLOC_DEFINE(qd_composed_field_t);
@@ -480,6 +482,7 @@ void qd_compose_insert_typed_iterator(qd_composed_field_t *field, qd_field_itera
 {
     while (!qd_field_iterator_end(iter)) {
         uint8_t octet = qd_field_iterator_octet(iter);
+        printf("%" PRIu8 "\n", octet);
         qd_insert_8(field, octet);
     }
 
