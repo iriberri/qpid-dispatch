@@ -90,13 +90,13 @@ struct qd_agent_request_t {
     qd_parsed_field_t            *in_body; // The  parsed field that holds the parsed contents of the management request body
     qd_buffer_list_t             *buffers; // A buffer chain holding all the relevant information for the CRUDQ operations.
     void                         *ctx;
-    int                           count;
+    int                           count; // count and offset are for queries
     int                           offset;
     qd_schema_entity_type_t       entity_type;
     qd_schema_entity_operation_t  operation;
-    qd_composed_field_t          *out_body;
+    qd_composed_field_t          *out_body; // Body of the outgoing response.
     int                           attribute_count;
-    bool                          respond;
+    bool                          respond; // Should the agent respond to this request?
     bool                          map_initialized;
     qd_agent_t                   *agent;
     int                           columns[QD_AGENT_MAX_COLUMNS];
@@ -108,8 +108,8 @@ struct qd_agent_request_t {
 static qd_parsed_field_t *qd_get_parsed_field_by_index(qd_agent_request_t *request, qd_request_attributes_t field);
 static qd_parsed_field_t *qd_get_parsed_field(qd_agent_request_t *request);
 
-//const char * const status_description = "statusDescription";
-//const char * const status_code = "statusCode";
+const char * const STATUS_DESCRIPTION = "statusDescription";
+const char * const STATUS_CODE = "statusCode";
 
 // Should this function be in agent.c
 static int qd_agent_request_get_attribute_count(qd_agent_request_t *request)
@@ -118,6 +118,9 @@ static int qd_agent_request_get_attribute_count(qd_agent_request_t *request)
     switch(request->entity_type) {
         case QD_SCHEMA_ENTITY_TYPE_SSLPROFILE:
             attribute_count = QD_SCHEMA_SSLPROFILE_ATTRIBUTES_ENUM_COUNT;
+            break;
+        case QD_SCHEMA_ENTITY_TYPE_ROUTER_CONFIG_ADDRESS:
+            attribute_count = QD_SCHEMA_ADDRESS_ATTRIBUTES_ENUM_COUNT;
             break;
         case QD_SCHEMA_ENTITY_TYPE_LISTENER:
             attribute_count = QD_SCHEMA_LISTENER_ATTRIBUTES_ENUM_COUNT;
@@ -168,6 +171,7 @@ static PyObject *qd_post_management_request(PyObject *self,
 
     qd_compose_end_list(field);
 
+
     AgentAdapter *adapter = ((AgentAdapter*) self);
 
     //
@@ -177,11 +181,12 @@ static PyObject *qd_post_management_request(PyObject *self,
     request->buffers = qd_compose_buffers(field);
 
     request->count = count;
+    request->offset = offset;
     request->entity_type = entity_type;
     request->operation = operation;
     request->in_body = 0;
     request->params = 0;
-    request->out_body = qd_compose(QD_PERFORMATIVE_BODY_AMQP_VALUE, 0);
+    request->out_body = 0;//qd_compose(QD_PERFORMATIVE_BODY_AMQP_VALUE, 0);
     request->map_initialized = false;
     request->respond = !!reply_to;
     request->agent = adapter->agent;
@@ -277,6 +282,7 @@ static void process_work_queue(void *context)
 
     while(work_item) {
         qd_agent_request_t *request = work_item->request;
+
         qd_entity_type_handler_t *handler = agent->handlers[request->entity_type];
         switch (request->operation) {
             case QD_SCHEMA_ENTITY_OPERATION_READ:
@@ -347,7 +353,7 @@ qd_agent_t* qd_agent(qd_dispatch_t *qd, char *address, const char *config_path)
 
 
     //
-    // Initialize the handlers to zeros
+    // Initialize the handlers to zeros so we can start clean
     //
     for (int i=0; i < QD_SCHEMA_ENTITY_TYPE_ENUM_COUNT; i++)
         agent->handlers[i] = 0;
@@ -433,23 +439,30 @@ static void qd_set_response_status(const qd_amqp_error_t *error, qd_composed_fie
     *field = qd_compose(QD_PERFORMATIVE_APPLICATION_PROPERTIES, *field);
     qd_compose_start_map(*field);
 
-    qd_compose_insert_string(*field, "statusDescription");
+    qd_compose_insert_string(*field, STATUS_DESCRIPTION);
     qd_compose_insert_string(*field, error->description);
 
-    qd_compose_insert_string(*field, "statusCode");
+    qd_compose_insert_string(*field, STATUS_CODE);
     qd_compose_insert_uint(*field, error->status);
 
     qd_compose_end_map(*field);
 }
 
+void qd_agent_request_free(qd_agent_request_t *request)
+{
+    free(request->entity_handler);
+    free(request->params);
+    free(request->in_body);
+    free(request->out_body);
+}
 
-static void send_response(const qd_amqp_error_t *status, qd_agent_request_t *request)
+
+static void send_response(void *ctx, const qd_amqp_error_t *status, qd_agent_request_t *request)
 {
     qd_composed_field_t *fld = 0;
 
     //qd_field_iterator_t     *correlation_id = qd_agent_get_request_correlation_id(request);
     qd_field_iterator_t     *reply_to       = qd_agent_get_request_reply_to(request);
-    qd_composed_field_t     *out_body       = request->out_body;
 
     // Start composing the message.
     // First set the properties on the message like reply_to, correlation-id etc.
@@ -458,49 +471,96 @@ static void send_response(const qd_amqp_error_t *status, qd_agent_request_t *req
     // Second, set the status on the message, QD_AMQP_OK or QD_AMQP_BAD_REQUEST and so on.
     qd_set_response_status(status, &fld);
 
-    qd_message_t *response = qd_message();
+    qd_message_t *response_msg = qd_message();
 
     if (status->status / 100 != 2) {
-        qd_compose_start_map(out_body);
-        qd_compose_end_map(out_body);
+        if (!request->out_body) {
+            request->out_body = qd_compose(QD_PERFORMATIVE_BODY_AMQP_VALUE, 0);
+            qd_compose_start_map(request->out_body);
+            qd_compose_end_map(request->out_body);
+        }
     }
 
-    // Finally, compose and send the message.
-    qd_message_compose_3(response, fld, out_body);
-    qdr_send_to1(request->agent->router_core, response, reply_to, true, false);
+    qdr_core_t *core = (qdr_core_t*)ctx;
 
+    // Finally, compose and send the message.
+    qd_message_compose_3(response_msg, fld, request->out_body);
+
+    qdr_send_to1(core, response_msg, reply_to, true, false);
+
+    qd_message_free(response_msg);
     qd_compose_free(fld);
+    qd_field_iterator_free(reply_to);
+    qd_agent_request_free(request);
+
+}
+
+static void qd_agent_request_insert_empty_query_results(qd_agent_request_t *request)
+{
+    // The body has not even been created, which means that there are no matching rows for the query
+    // Simply insert empty attributeNames and results
+    request->out_body  = qd_compose(QD_PERFORMATIVE_BODY_AMQP_VALUE, 0);
+    // Start a map in the out_body.
+    qd_compose_start_map(request->out_body);
+    //add a "attributeNames" key to out_body
+    qd_compose_insert_string(request->out_body, "attributeNames");
+    qd_compose_start_list(request->out_body);
+    qd_compose_end_list(request->out_body);
+
+    qd_compose_insert_string(request->out_body, "results");
+    qd_compose_start_list(request->out_body);
+    qd_compose_end_list(request->out_body);
+
+    qd_compose_end_map(request->out_body);
 
 }
 
 
-void qd_agent_request_complete(void *ctx, qd_amqp_error_t *status, qd_agent_request_t *request)
+void qd_agent_request_complete(void *ctx, const qd_amqp_error_t *status, qd_agent_request_t *request)
 {
     if (request->respond) {
         if (status->status < 400) {
             switch(request->operation) {
                 case QD_SCHEMA_ENTITY_OPERATION_QUERY:
-                    qd_compose_end_list(request->out_body); //end the list for results
-                    qd_compose_end_map(request->out_body);
+                    if (request->out_body) {
+                        // An out_body was created and one or more rows have been inserted.
+                        qd_compose_end_list(request->out_body); //end the list for results
+                        qd_compose_end_map(request->out_body);  // end the response map.
+                    }
+                    else {
+                        // out_body was not even created. This query did not yield any results.
+                        // Insert empty results.
+                        qd_agent_request_insert_empty_query_results(request);
+                    }
                     break;
                 case QD_SCHEMA_ENTITY_OPERATION_DELETE:
-                    qd_compose_start_map(request->out_body);
-                    qd_compose_end_map(request->out_body);
+                    if (!request->out_body) {
+                        //amqp-­‐value section containing a map with zero entries
+                        request->out_body  = qd_compose(QD_PERFORMATIVE_BODY_AMQP_VALUE, 0);
+                        qd_compose_start_map(request->out_body);
+                        qd_compose_end_map(request->out_body);
+                    }
                     break;
                 default:
                     break;
             }
         }
 
-        send_response(status, request);
+        send_response(ctx, status, request);
     }
+
 }
 
 static void qd_agent_request_insert_attributes_map(qd_agent_request_t *request, void *object)
 {
     int entity_type = qd_agent_get_request_entity_type(request);
 
+    if (!request->out_body) {
+       request->out_body  = qd_compose(QD_PERFORMATIVE_BODY_AMQP_VALUE, 0);
+    }
+
     qd_compose_start_map(request->out_body);
+
     for (int i=0; i<request->attribute_count; i++) {
         // Insert the key
         qd_compose_insert_string(request->out_body, qd_schema_attribute_names[entity_type][i]);
@@ -657,16 +717,6 @@ void qd_agent_register_handlers(void *ctx,
 }
 
 
-bool qd_agent_has_work(qd_agent_t *agent)
-{
-    sys_mutex_lock(agent->lock);
-    size_t queue_size = DEQ_SIZE(agent->work_queue);
-    sys_mutex_lock(agent->lock);
-    if (queue_size > 0)
-        return true;
-    return false;
-}
-
 static qd_parsed_field_t *qd_agent_get_request_body(qd_agent_request_t *request)
 {
     if (request->in_body)
@@ -677,6 +727,7 @@ static qd_parsed_field_t *qd_agent_get_request_body(qd_agent_request_t *request)
     }
 }
 
+
 char *qd_agent_request_get_string(qd_agent_request_t *request, int attr_id)
 {
     qd_parsed_field_t *field    = qd_parse_value_by_int_key(qd_agent_get_request_body(request), attr_id);
@@ -685,6 +736,16 @@ char *qd_agent_request_get_string(qd_agent_request_t *request, int attr_id)
         if (iter) {
             return (char*)qd_field_iterator_copy(iter);
         }
+    }
+    return 0;
+}
+
+
+int qd_agent_request_get_int(qd_agent_request_t *request, int attr_id)
+{
+    qd_parsed_field_t *field    = qd_parse_value_by_int_key(qd_agent_get_request_body(request), attr_id);
+    if (field) {
+        return qd_parse_as_int(field);
     }
     return 0;
 }
@@ -711,6 +772,19 @@ void qd_agent_request_set_string(qd_agent_request_t *request, char *value)
 {
     if (value)
         qd_compose_insert_string(request->out_body, value);
+    else
+        qd_compose_insert_null(request->out_body);
+}
+
+void qd_agent_request_set_null(qd_agent_request_t *request)
+{
+    qd_compose_insert_null(request->out_body);
+}
+
+void qd_agent_request_set_int(qd_agent_request_t *request, int value)
+{
+    if (value)
+        qd_compose_insert_int(request->out_body, value);
     else
         qd_compose_insert_null(request->out_body);
 }
@@ -782,6 +856,11 @@ qd_field_iterator_t *qd_agent_get_request_identity(qd_agent_request_t *request)
     return 0;
 }
 
+qd_agent_t *qd_agent_get_request_agent(qd_agent_request_t *request)
+{
+    return request->agent;
+}
+
 qd_buffer_list_t *qd_agent_get_request_buffers(qd_agent_request_t *request)
 {
     return request->buffers;
@@ -792,14 +871,24 @@ int qd_agent_get_request_entity_type(qd_agent_request_t *request)
     return (int)request->entity_type;
 }
 
+int qd_agent_get_request_operation(qd_agent_request_t *request)
+{
+    return (int)request->operation;
+}
+
 int qd_agent_get_request_count(qd_agent_request_t *request)
 {
     return request->count;
 }
 
-void qdr_agent_set_router_core(qd_agent_t *agent, qdr_core_t *router_core)
+void qd_agent_set_router_core(qd_agent_t *agent, qdr_core_t *router_core)
 {
     agent->router_core = router_core;
+}
+
+qdr_core_t *qd_agent_get_router_core(qd_agent_t *agent)
+{
+    return agent->router_core;
 }
 
 int qd_agent_get_request_offset(qd_agent_request_t *request)
@@ -816,3 +905,4 @@ void qd_agent_free(qd_agent_t *agent)
 {
 
 }
+

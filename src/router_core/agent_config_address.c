@@ -21,6 +21,8 @@
 #include "agent_config_address.h"
 #include <inttypes.h>
 #include <stdio.h>
+#include <qpid/dispatch/agent.h>
+#include "schema_enum.h"
 
 #define QDR_CONFIG_ADDRESS_NAME          0
 #define QDR_CONFIG_ADDRESS_IDENTITY      1
@@ -44,42 +46,39 @@ const char *qdr_config_address_columns[] =
 
 const char *CONFIG_ADDRESS_TYPE = "org.apache.qpid.dispatch.router.config.address";
 
-static void qdr_config_address_insert_column_CT(qdr_address_config_t *addr, int col, qd_composed_field_t *body, bool as_map)
+static void qdr_config_address_insert_column_CT(qdr_address_config_t *addr, int attr_id, qd_agent_request_t *request)
 {
     const char *text = 0;
     const char *key;
 
-    if (as_map)
-        qd_compose_insert_string(body, qdr_config_address_columns[col]);
+    //if (as_map)
+    //    qd_compose_insert_string(body, qdr_config_address_columns[col]);
 
-    switch(col) {
-    case QDR_CONFIG_ADDRESS_NAME:
-        if (addr->name)
-            qd_compose_insert_string(body, addr->name);
-        else
-            qd_compose_insert_null(body);
+    switch(attr_id) {
+    case QD_SCHEMA_ADDRESS_ATTRIBUTES_NAME:
+        qd_agent_request_set_string(request, addr->name);
         break;
 
-    case QDR_CONFIG_ADDRESS_IDENTITY: {
+    case QD_SCHEMA_ADDRESS_ATTRIBUTES_IDENTITY: {
         char id_str[100];
         snprintf(id_str, 100, "%"PRId64, addr->identity);
-        qd_compose_insert_string(body, id_str);
+        qd_agent_request_set_string(request, id_str);
         break;
     }
 
-    case QDR_CONFIG_ADDRESS_TYPE:
-        qd_compose_insert_string(body, CONFIG_ADDRESS_TYPE);
+    case QD_SCHEMA_ADDRESS_ATTRIBUTES_TYPE:
+        qd_agent_request_set_string(request, (char *)CONFIG_ADDRESS_TYPE);
         break;
 
-    case QDR_CONFIG_ADDRESS_PREFIX:
+    case QD_SCHEMA_ADDRESS_ATTRIBUTES_PREFIX:
         key = (const char*) qd_hash_key_by_handle(addr->hash_handle);
         if (key && key[0] == 'Z')
-            qd_compose_insert_string(body, &key[1]);
+            qd_agent_request_set_string(request, (char *)&key[1]);
         else
-            qd_compose_insert_null(body);
+            qd_agent_request_set_null(request);
         break;
 
-    case QDR_CONFIG_ADDRESS_DISTRIBUTION:
+    case QD_SCHEMA_ADDRESS_ATTRIBUTES_DISTRIBUTION:
         switch (addr->treatment) {
         case QD_TREATMENT_MULTICAST_FLOOD:
         case QD_TREATMENT_MULTICAST_ONCE:   text = "multicast"; break;
@@ -89,39 +88,21 @@ static void qdr_config_address_insert_column_CT(qdr_address_config_t *addr, int 
             text = 0;
         }
 
-        if (text)
-            qd_compose_insert_string(body, text);
-        else
-            qd_compose_insert_null(body);
-
+        qd_agent_request_set_string(request, (char *)text);
         break;
 
-    case QDR_CONFIG_ADDRESS_WAYPOINT:
-        qd_compose_insert_bool(body, addr->in_phase == 0 && addr->out_phase == 1);
+    case QD_SCHEMA_ADDRESS_ATTRIBUTES_WAYPOINT:
+        qd_agent_request_set_bool(request, addr->in_phase == 0 && addr->out_phase == 1);
         break;
 
-    case QDR_CONFIG_ADDRESS_IN_PHASE:
-        qd_compose_insert_int(body, addr->in_phase);
+    case QD_SCHEMA_ADDRESS_ATTRIBUTES_INGRESSPHASE:
+        qd_agent_request_set_int(request, addr->in_phase);
         break;
 
-    case QDR_CONFIG_ADDRESS_OUT_PHASE:
-        qd_compose_insert_int(body, addr->out_phase);
+    case QD_SCHEMA_ADDRESS_ATTRIBUTES_EGRESSPHASE:
+        qd_agent_request_set_int(request, addr->out_phase);
         break;
     }
-}
-
-
-static void qdr_agent_write_config_address_CT(qdr_query_t *query,  qdr_address_config_t *addr)
-{
-    qd_composed_field_t *body = query->body;
-
-    qd_compose_start_list(body);
-    int i = 0;
-    while (query->columns[i] >= 0) {
-        qdr_config_address_insert_column_CT(addr, query->columns[i], body, false);
-        i++;
-    }
-    qd_compose_end_list(body);
 }
 
 
@@ -133,70 +114,69 @@ static void qdr_manage_advance_config_address_CT(qdr_query_t *query, qdr_address
 }
 
 
-void qdra_config_address_get_first_CT(qdr_core_t *core, qdr_query_t *query, int offset)
-{
-    //
-    // Queries that get this far will always succeed.
-    //
-    query->status = QD_AMQP_OK;
-
-    //
-    // If the offset goes beyond the set of objects, end the query now.
-    //
-    if (offset >= DEQ_SIZE(core->addr_config)) {
-        query->more = false;
-        qdr_agent_enqueue_response_CT(core, query);
-        return;
-    }
-
-    //
-    // Run to the object at the offset.
-    //
-    qdr_address_config_t *addr = DEQ_HEAD(core->addr_config);
-    for (int i = 0; i < offset && addr; i++)
-        addr = DEQ_NEXT(addr);
-    assert(addr);
-
-    //
-    // Write the columns of the object into the response body.
-    //
-    qdr_agent_write_config_address_CT(query, addr);
-
-    //
-    // Advance to the next address
-    //
-    query->next_offset = offset;
-    qdr_manage_advance_config_address_CT(query, addr);
-
-    //
-    // Enqueue the response.
-    //
-    qdr_agent_enqueue_response_CT(core, query);
-}
-
 
 void qdra_config_address_get_next_CT(qdr_core_t *core, qdr_query_t *query)
 {
     qdr_address_config_t *addr = 0;
 
-    if (query->next_offset < DEQ_SIZE(core->addr_config)) {
-        addr = DEQ_HEAD(core->addr_config);
-        for (int i = 0; i < query->next_offset && addr; i++)
-            addr = DEQ_NEXT(addr);
+    //
+    // Queries that get this far will always succeed.
+    //
+    query->status = QD_AMQP_OK;
+
+    int offset = qd_agent_get_request_offset(query->request);
+
+    //
+    // If we have already populated the next_offset, use it.
+    //
+
+
+    if (query->next_offset > 0) {
+        if (query->next_offset < DEQ_SIZE(core->addr_config)) {
+            addr = DEQ_HEAD(core->addr_config);
+            for (int i = 0; i < query->next_offset && addr; i++)
+                addr = DEQ_NEXT(addr);
+        }
     }
+    else {
+
+        //
+        // If the offset goes beyond the set of objects, end the query now.
+        //
+        if (offset >= DEQ_SIZE(core->addr_config)) {
+            query->more = false;
+        }
+        else {
+            //
+            // Run to the object at the offset.
+            //
+
+            addr = DEQ_HEAD(core->addr_config);
+
+            for (int i = 0; i < offset && addr; i++)
+                addr = DEQ_NEXT(addr);
+
+            //
+            // Advance to the next address
+            //
+            query->next_offset = offset;
+        }
+    }
+
 
     if (addr) {
         //
         // Write the columns of the addr entity into the response body.
         //
-        qdr_agent_write_config_address_CT(query, addr);
+        qd_agent_request_write_object(query->request, addr);
 
         //
         // Advance to the next object
         //
         qdr_manage_advance_config_address_CT(query, addr);
-    } else
+    } else {
         query->more = false;
+    }
 
     //
     // Enqueue the response.
@@ -205,10 +185,9 @@ void qdra_config_address_get_next_CT(qdr_core_t *core, qdr_query_t *query)
 }
 
 
-static qd_address_treatment_t qdra_address_treatment_CT(qd_parsed_field_t *field)
+static qd_address_treatment_t qdra_address_treatment_CT(qd_field_iterator_t *iter)
 {
-    if (field) {
-        qd_field_iterator_t *iter = qd_parse_raw(field);
+    if (iter) {
         if (qd_field_iterator_equal(iter, (unsigned char*) "multicast"))    return QD_TREATMENT_MULTICAST_ONCE;
         if (qd_field_iterator_equal(iter, (unsigned char*) "closest"))      return QD_TREATMENT_ANYCAST_CLOSEST;
         if (qd_field_iterator_equal(iter, (unsigned char*) "balanced"))     return QD_TREATMENT_ANYCAST_BALANCED;
@@ -254,10 +233,14 @@ static qdr_address_config_t *qdr_address_config_find_by_name_CT(qdr_core_t *core
 
 
 void qdra_config_address_delete_CT(qdr_core_t          *core,
-                                   qdr_query_t         *query,
-                                   qd_field_iterator_t *name,
-                                   qd_field_iterator_t *identity)
+                                   qdr_query_t         *query)
 {
+    qd_agent_request_t *request = query->request;
+
+    qd_field_iterator_t *name = qd_agent_get_request_name(request);
+    qd_field_iterator_t *identity = qd_agent_get_request_identity(request);
+
+
     qdr_address_config_t *addr = 0;
 
     if (!name && !identity) {
@@ -296,11 +279,20 @@ void qdra_config_address_delete_CT(qdr_core_t          *core,
     qdr_agent_enqueue_response_CT(core, query);
 }
 
-void qdra_config_address_create_CT(qdr_core_t          *core,
-                                   qd_field_iterator_t *name,
-                                   qdr_query_t         *query,
-                                   qd_parsed_field_t   *in_body)
+
+void qdra_get_config_address_attr(void* obj, int attr_id, qd_agent_request_t *request)
 {
+    qdr_address_config_t *addr = (qdr_address_config_t *)obj;
+    qdr_config_address_insert_column_CT(addr, attr_id, request);
+}
+
+void qdra_config_address_create_CT(qdr_core_t  *core,
+                                   qdr_query_t *query)
+{
+
+    qd_agent_request_t *request = query->request;
+
+    qd_field_iterator_t *name = qd_agent_get_request_name(request);
     while (true) {
         //
         // Ensure there isn't a duplicate name and that the body is a map
@@ -319,26 +311,12 @@ void qdra_config_address_create_CT(qdr_core_t          *core,
             break;
         }
 
-        if (!qd_parse_is_map(in_body)) {
-            query->status = QD_AMQP_BAD_REQUEST;
-            query->status.description = "Body of request must be a map";
-            qd_log(core->agent_log, QD_LOG_ERROR, "Error performing CREATE of %s: %s", CONFIG_ADDRESS_TYPE, query->status.description);
-            break;
-        }
-
-        //
-        // Extract the fields from the request
-        //
-        qd_parsed_field_t *prefix_field    = qd_parse_value_by_key(in_body, qdr_config_address_columns[QDR_CONFIG_ADDRESS_PREFIX]);
-        qd_parsed_field_t *distrib_field   = qd_parse_value_by_key(in_body, qdr_config_address_columns[QDR_CONFIG_ADDRESS_DISTRIBUTION]);
-        qd_parsed_field_t *waypoint_field  = qd_parse_value_by_key(in_body, qdr_config_address_columns[QDR_CONFIG_ADDRESS_WAYPOINT]);
-        qd_parsed_field_t *in_phase_field  = qd_parse_value_by_key(in_body, qdr_config_address_columns[QDR_CONFIG_ADDRESS_IN_PHASE]);
-        qd_parsed_field_t *out_phase_field = qd_parse_value_by_key(in_body, qdr_config_address_columns[QDR_CONFIG_ADDRESS_OUT_PHASE]);
+        char *prefix = qd_agent_request_get_string(request, QD_SCHEMA_ADDRESS_ATTRIBUTES_PREFIX);
 
         //
         // Prefix field is mandatory.  Fail if it is not here.
         //
-        if (!prefix_field) {
+        if (!prefix) {
             query->status = QD_AMQP_BAD_REQUEST;
             query->status.description = "prefix field is mandatory";
             qd_log(core->agent_log, QD_LOG_ERROR, "Error performing CREATE of %s: %s", CONFIG_ADDRESS_TYPE, query->status.description);
@@ -348,8 +326,11 @@ void qdra_config_address_create_CT(qdr_core_t          *core,
         //
         // Ensure that there isn't another configured address with the same prefix
         //
-        qd_field_iterator_t *iter = qd_parse_raw(prefix_field);
-        qd_address_iterator_reset_view(iter, ITER_VIEW_ADDRESS_HASH);
+
+
+
+        qd_field_iterator_t *iter = qd_address_iterator_string(prefix, ITER_VIEW_ADDRESS_HASH);
+        //qd_address_iterator_reset_view(iter, ITER_VIEW_ADDRESS_HASH);
         qd_address_iterator_override_prefix(iter, 'Z');
         addr = 0;
         qd_hash_retrieve(core->addr_hash, iter, (void**) &addr);
@@ -360,9 +341,10 @@ void qdra_config_address_create_CT(qdr_core_t          *core,
             break;
         }
 
-        bool waypoint  = waypoint_field  ? qd_parse_as_bool(waypoint_field) : false;
-        int  in_phase  = in_phase_field  ? qd_parse_as_int(in_phase_field)  : -1;
-        int  out_phase = out_phase_field ? qd_parse_as_int(out_phase_field) : -1;
+        bool waypoint  = qd_agent_request_get_bool(request, QD_SCHEMA_ADDRESS_ATTRIBUTES_WAYPOINT);
+        int  in_phase  = qd_agent_request_get_long(request, QD_SCHEMA_ADDRESS_ATTRIBUTES_INGRESSPHASE);
+        int  out_phase = qd_agent_request_get_long(request, QD_SCHEMA_ADDRESS_ATTRIBUTES_EGRESSPHASE);
+        char *distribution = qd_agent_request_get_string(request, QD_SCHEMA_ADDRESS_ATTRIBUTES_DISTRIBUTION);
 
         //
         // Handle the address-phasing logic.  If the phases are provided, use them.  Otherwise
@@ -390,66 +372,31 @@ void qdra_config_address_create_CT(qdr_core_t          *core,
         DEQ_ITEM_INIT(addr);
         addr->name      = name ? (char*) qd_field_iterator_copy(name) : 0;
         addr->identity  = qdr_identifier(core);
-        addr->treatment = qdra_address_treatment_CT(distrib_field);
+        addr->treatment = qdra_address_treatment_CT(qd_address_iterator_string(distribution, ITER_VIEW_ALL));
         addr->in_phase  = in_phase;
         addr->out_phase = out_phase;
 
         qd_hash_insert(core->addr_hash, iter, addr, &addr->hash_handle);
         DEQ_INSERT_TAIL(core->addr_config, addr);
 
-        //
-        // Compose the result map for the response.
-        //
-        if (query->body) {
-            qd_compose_start_map(query->body);
-            for (int col = 0; col < QDR_CONFIG_ADDRESS_COLUMN_COUNT; col++)
-                qdr_config_address_insert_column_CT(addr, col, query->body, true);
-            qd_compose_end_map(query->body);
-        }
-
         query->status = QD_AMQP_CREATED;
+        qd_agent_request_write_object(request, addr);
         break;
     }
 
-    //
-    // Enqueue the response if there is a body. If there is no body, this is a management
-    // operation created internally by the configuration file parser.
-    //
-    if (query->body) {
-        //
-        // If there was an error in processing the create, insert a NULL value into the body.
-        //
-        if (query->status.status / 100 > 2)
-            qd_compose_insert_null(query->body);
-        qdr_agent_enqueue_response_CT(core, query);
-    } else
-        qdr_query_free(query);
-}
-
-
-static void qdr_manage_write_config_address_map_CT(qdr_core_t          *core,
-                                                   qdr_address_config_t *addr,
-                                                   qd_composed_field_t *body,
-                                                   const char          *qdr_config_address_columns[])
-{
-    qd_compose_start_map(body);
-
-    for(int i = 0; i < QDR_CONFIG_ADDRESS_COLUMN_COUNT; i++) {
-        qd_compose_insert_string(body, qdr_config_address_columns[i]);
-        qdr_config_address_insert_column_CT(addr, i, body, false);
-    }
-
-    qd_compose_end_map(body);
+    qdr_agent_enqueue_response_CT(core, query);
 }
 
 
 void qdra_config_address_get_CT(qdr_core_t          *core,
-                                qd_field_iterator_t *name,
-                                qd_field_iterator_t *identity,
-                                qdr_query_t         *query,
-                                const char          *qdr_config_address_columns[])
+                                qdr_query_t         *query)
 {
     qdr_address_config_t *addr = 0;
+
+    qd_agent_request_t *request = query->request;
+
+    qd_field_iterator_t *name = qd_agent_get_request_name(request);
+    qd_field_iterator_t *identity = qd_agent_get_request_identity(request);
 
     if (!name && !identity) {
         query->status = QD_AMQP_BAD_REQUEST;
@@ -470,7 +417,8 @@ void qdra_config_address_get_CT(qdr_core_t          *core,
             //
             // Write the columns of the address entity into the response body.
             //
-            qdr_manage_write_config_address_map_CT(core, addr, query->body, qdr_config_address_columns);
+            //qdr_manage_write_config_address_map_CT(core, addr, query->body, qdr_config_address_columns);
+            qd_agent_request_write_object(request, addr);
             query->status = QD_AMQP_OK;
         }
     }

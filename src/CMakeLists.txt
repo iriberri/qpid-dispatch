@@ -60,13 +60,13 @@ set(qpid_dispatch_SOURCES
   message.c
   parse.c
   policy.c
-  agent_amqp.c
+  agent.c
   posix/driver.c
   posix/threading.c
   python_embedded.c
   router_agent.c
   router_config.c
-  router_core/agent.c
+  router_core/management_handler.c
   router_core/agent_address.c
   router_core/agent_config_address.c
   router_core/agent_config_auto_link.c
@@ -79,7 +79,6 @@ set(qpid_dispatch_SOURCES
   router_core/router_core.c
   router_core/router_core_thread.c
   router_core/route_tables.c
-  router_core/management_agent.c
   router_core/terminus.c
   router_core/transfer.c
   router_node.c

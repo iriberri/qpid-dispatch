@@ -291,12 +291,15 @@ static qdr_auto_link_t *qdr_auto_link_config_find_by_name_CT(qdr_core_t *core, q
 }
 
 
-void qdra_config_auto_link_delete_CT(qdr_core_t          *core,
-                                      qdr_query_t         *query,
-                                      qd_field_iterator_t *name,
-                                      qd_field_iterator_t *identity)
+void qdra_config_auto_link_delete_CT(qdr_core_t  *core,
+                                     qdr_query_t *query)
 {
     qdr_auto_link_t *al = 0;
+
+    qd_agent_request_t *request = query->request;
+
+    qd_field_iterator_t *name = qd_agent_get_request_name(request);
+    qd_field_iterator_t *identity = qd_agent_get_request_identity(request);
 
     if (!name && !identity) {
         query->status = QD_AMQP_BAD_REQUEST;
@@ -322,11 +325,15 @@ void qdra_config_auto_link_delete_CT(qdr_core_t          *core,
     qdr_agent_enqueue_response_CT(core, query);
 }
 
-void qdra_config_auto_link_create_CT(qdr_core_t          *core,
-                                      qd_field_iterator_t *name,
-                                      qdr_query_t         *query,
-                                      qd_parsed_field_t   *in_body)
+void qdra_config_auto_link_create_CT(qdr_core_t  *core,
+                                     qdr_query_t *query)
 {
+    qd_agent_request_t *request = query->request;
+
+    qd_field_iterator_t *name = qd_agent_get_request_name(request);
+
+    qd_parsed_field_t *in_body = 0;
+
     while (true) {
         //
         // Ensure there isn't a duplicate name and that the body is a map
@@ -453,13 +460,15 @@ static void qdr_manage_write_config_auto_link_map_CT(qdr_core_t          *core,
 }
 
 
-void qdra_config_auto_link_get_CT(qdr_core_t        *core,
-                                qd_field_iterator_t *name,
-                                qd_field_iterator_t *identity,
-                                qdr_query_t         *query,
-                                const char          *qdr_config_auto_link_columns[])
+void qdra_config_auto_link_get_CT(qdr_core_t  *core,
+                                  qdr_query_t *query)
 {
     qdr_auto_link_t *al = 0;
+
+    qd_agent_request_t *request = query->request;
+
+    qd_field_iterator_t *name = qd_agent_get_request_name(request);
+    qd_field_iterator_t *identity = qd_agent_get_request_identity(request);
 
     if (!name && !identity) {
         query->status = QD_AMQP_BAD_REQUEST;

@@ -850,7 +850,8 @@ class Agent(object):
             adapter = self.entity_adapter(et, None)
             print 'adapter ', adapter
 
-            if requested_type == 'org.apache.qpid.dispatch.sslProfile':
+            if requested_type == 'org.apache.qpid.dispatch.sslProfile' or \
+                            requested_type == 'org.apache.qpid.dispatch.router.config.address':
                 from ..test_post import ManagementAgent
                 print 'calling management_agent.post_request'
 
@@ -862,9 +863,9 @@ class Agent(object):
                                                               reply_to=request.reply_to)
         elif operation.lower() == 'query':
             from ..test_post import ManagementAgent
-            print 'calling management_agent.post_request'
+            print 'calling management_agent.post_request for query'
             ManagementAgent.management_agent.post_request(self.schema.all_operation_defs.get('QUERY').ordinality,
-                                                          6,
+                                                          10,
                                                           cid=request.correlation_id,
                                                           name=request.properties.get('name'),
                                                           body=None,
@@ -953,8 +954,10 @@ class Agent(object):
         et.create_check(attributes)
 
         adapter = self.entity_adapter(et, attributes)
-        if request.properties['type'] == 'org.apache.qpid.dispatch.sslProfile':
+        if request.properties['type'] == 'org.apache.qpid.dispatch.sslProfile' or \
+                        request.properties['type'] == 'org.apache.qpid.dispatch.router.config.address':
             from ..test_post import ManagementAgent
+            print "attributes['name'] ", attributes['name']
             ManagementAgent.management_agent.post_request(self.schema.all_operation_defs.get('CREATE').ordinality,
                                                           adapter.entity_type.ordinality,
                                                           cid=request.correlation_id,

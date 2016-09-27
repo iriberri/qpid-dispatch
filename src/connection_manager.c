@@ -570,34 +570,24 @@ static void qd_connection_manager_query_ssl_profile(void *ctx, qd_agent_request_
 
     qd_connection_manager_t *connection_manager = qd->connection_manager;
 
-    printf ("Connection manager %p\n", qd->connection_manager);
-
     qd_amqp_error_t status = QD_AMQP_OK;
 
     if(DEQ_SIZE(connection_manager->config_ssl_profiles) > 0) {
         int size = DEQ_SIZE(connection_manager->config_ssl_profiles);
-        printf ("Count is %i ******** \n", count);
-        printf ("offset is %i ******** \n", offset);
         if (offset >= size) {
-            printf ("offset >= DEQ_SIZE(connection_manager->config_ssl_profiles) ********* \n");
             qd_agent_request_complete(qd->router->router_core, &status, request);
             return;
         }
 
         qd_config_ssl_profile_t *ssl_profile = DEQ_HEAD(connection_manager->config_ssl_profiles);
 
-        printf ("qd_connection_manager_query_ssl_profile 1\n");
-
         for (int i = 0; i < offset && ssl_profile; i++)
             ssl_profile = DEQ_NEXT(ssl_profile);
 
-        printf ("qd_connection_manager_query_ssl_profile 2 %p \n", ssl_profile);
         assert(ssl_profile);
-        printf ("qd_connection_manager_query_ssl_profile 3\n");
 
         if (count == 0)
             count = size;
-        printf ("Count is %i ******** \n", size);
 
 
         for (int j=0; j< count; j++) {

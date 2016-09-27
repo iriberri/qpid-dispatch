@@ -149,7 +149,7 @@ static void qdr_manage_advance_config_link_route_CT(qdr_query_t *query, qdr_link
 }
 
 
-void qdra_config_link_route_get_first_CT(qdr_core_t *core, qdr_query_t *query, int offset)
+/*void qdra_config_link_route_get_first_CT(qdr_core_t *core, qdr_query_t *query, int offset)
 {
     //
     // Queries that get this far will always succeed.
@@ -188,7 +188,7 @@ void qdra_config_link_route_get_first_CT(qdr_core_t *core, qdr_query_t *query, i
     // Enqueue the response.
     //
     qdr_agent_enqueue_response_CT(core, query);
-}
+}*/
 
 
 static void qdr_manage_write_config_link_route_map_CT(qdr_core_t          *core,
@@ -308,10 +308,14 @@ static qdr_link_route_t *qdr_link_route_config_find_by_name_CT(qdr_core_t *core,
 
 
 void qdra_config_link_route_delete_CT(qdr_core_t          *core,
-                                      qdr_query_t         *query,
-                                      qd_field_iterator_t *name,
-                                      qd_field_iterator_t *identity)
+                                      qdr_query_t         *query)
 {
+
+    qd_agent_request_t *request = query->request;
+
+    qd_field_iterator_t *name = qd_agent_get_request_name(request);
+    qd_field_iterator_t *identity = qd_agent_get_request_identity(request);
+
     qdr_link_route_t *lr = 0;
 
     if (!name && !identity) {
@@ -339,10 +343,14 @@ void qdra_config_link_route_delete_CT(qdr_core_t          *core,
 }
 
 void qdra_config_link_route_create_CT(qdr_core_t          *core,
-                                      qd_field_iterator_t *name,
-                                      qdr_query_t         *query,
-                                      qd_parsed_field_t   *in_body)
+                                      qdr_query_t         *query)
 {
+    qd_agent_request_t *request = query->request;
+
+    qd_field_iterator_t *name = qd_agent_get_request_name(request);
+
+    qd_parsed_field_t *in_body = 0;
+
     while (true) {
         //
         // Ensure there isn't a duplicate name and that the body is a map
@@ -445,13 +453,15 @@ void qdra_config_link_route_create_CT(qdr_core_t          *core,
     }
 }
 
-void qdra_config_link_route_get_CT(qdr_core_t          *core,
-                                   qd_field_iterator_t *name,
-                                   qd_field_iterator_t *identity,
-                                   qdr_query_t         *query,
-                                   const char          *qdr_config_link_route_columns[])
+void qdra_config_link_route_get_CT(qdr_core_t  *core,
+                                   qdr_query_t *query)
 {
     qdr_link_route_t *lr = 0;
+
+    qd_agent_request_t *request = query->request;
+
+    qd_field_iterator_t *name = qd_agent_get_request_name(request);
+    qd_field_iterator_t *identity = qd_agent_get_request_identity(request);
 
     if (!name && !identity) {
         query->status = QD_AMQP_BAD_REQUEST;

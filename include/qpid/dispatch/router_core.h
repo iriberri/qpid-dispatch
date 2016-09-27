@@ -33,7 +33,10 @@
  */
 
 typedef struct qdr_core_t         qdr_core_t;
+
 #include <qpid/dispatch/router.h>
+#include <qpid/dispatch/agent.h>
+
 typedef struct qdr_subscription_t qdr_subscription_t;
 typedef struct qdr_connection_t   qdr_connection_t;
 typedef struct qdr_link_t         qdr_link_t;
@@ -593,8 +596,9 @@ typedef struct qdr_query_t qdr_query_t;
  * @param in_body The body of the request message
  * @param out_body A composed field for the body of the response message
  */
-void qdr_manage_create(qdr_core_t *core, void *context, qd_router_entity_type_t type,
-                       qd_field_iterator_t *name, qd_parsed_field_t *in_body, qd_composed_field_t *out_body);
+void qdr_manage_create(void               *context,
+                       qdr_core_t         *core,
+                       qd_agent_request_t *request);
 
 /**
  * qdr_manage_delete
@@ -607,8 +611,9 @@ void qdr_manage_create(qdr_core_t *core, void *context, qd_router_entity_type_t 
  * @param name The name supplied with the request (or 0 if the identity was supplied)
  * @param identity The identity supplied with the request (or 0 if the name was supplied)
  */
-void qdr_manage_delete(qdr_core_t *core, void *context, qd_router_entity_type_t type,
-                       qd_field_iterator_t *name, qd_field_iterator_t *identity);
+void qdr_manage_delete(void               *context,
+                       qdr_core_t         *core,
+                       qd_agent_request_t *request);
 
 /**
  * qdr_manage_read
@@ -622,8 +627,9 @@ void qdr_manage_delete(qdr_core_t *core, void *context, qd_router_entity_type_t 
  * @param identity The identity supplied with the request (or 0 if the name was supplied)
  * @param body A composed field for the body of the response message
  */
-void qdr_manage_read(qdr_core_t *core, void *context, qd_router_entity_type_t type,
-                     qd_field_iterator_t *name, qd_field_iterator_t *identity, qd_composed_field_t *body);
+void qdr_manage_read(void               *context,
+                    qdr_core_t          *core,
+                     qd_agent_request_t *request);
 
 
 /**
@@ -639,9 +645,9 @@ void qdr_manage_read(qdr_core_t *core, void *context, qd_router_entity_type_t ty
  * @param in_body The body of the request message
  * @param out_body A composed field for the body of the response message
  */
-void qdr_manage_update(qdr_core_t *core, void *context, qd_router_entity_type_t type,
-                       qd_field_iterator_t *name, qd_field_iterator_t *identity,
-                       qd_parsed_field_t *in_body, qd_composed_field_t *out_body);
+void qdr_manage_update(void               *context,
+                       qdr_core_t         *core,
+                       qd_agent_request_t *request);
 
 /**
  * Sequence for running a query:
@@ -658,14 +664,15 @@ void qdr_manage_update(qdr_core_t *core, void *context, qd_router_entity_type_t 
  *    b) if more is false or count is exceeded, call qdr_query_free, close the outer list, close the map
  */
 
-qdr_query_t *qdr_manage_query(qdr_core_t *core, void *context, qd_router_entity_type_t type, 
-                              qd_parsed_field_t *attribute_names, qd_composed_field_t *body);
-void qdr_query_add_attribute_names(qdr_query_t *query);
+qdr_query_t *qdr_manage_query(void               *context,
+                              qdr_core_t         *core,
+                              qd_agent_request_t *request);
+
 void qdr_query_get_first(qdr_query_t *query, int offset);
 void qdr_query_get_next(qdr_query_t *query);
 void qdr_query_free(qdr_query_t *query);
 
-typedef void (*qdr_manage_response_t) (void *context, const qd_amqp_error_t *status, bool more);
+typedef void (*qdr_manage_response_t) (void *context, const qd_amqp_error_t *status, qd_agent_request_t *request, bool more);
 void qdr_manage_handler(qdr_core_t *core, qdr_manage_response_t response_handler);
 
 #endif

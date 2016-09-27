@@ -195,7 +195,7 @@ static void qdr_manage_advance_link_CT(qdr_query_t *query, qdr_link_t *link)
 }
 
 
-void qdra_link_get_first_CT(qdr_core_t *core, qdr_query_t *query, int offset)
+/*void qdra_link_get_first_CT(qdr_core_t *core, qdr_query_t *query, int offset)
 {
     //
     // Queries that get this far will always succeed.
@@ -234,7 +234,7 @@ void qdra_link_get_first_CT(qdr_core_t *core, qdr_query_t *query, int offset)
     // Enqueue the response.
     //
     qdr_agent_enqueue_response_CT(core, query);
-}
+}*/
 
 
 void qdra_link_get_next_CT(qdr_core_t *core, qdr_query_t *query)
@@ -341,12 +341,15 @@ static void qdra_link_set_bad_request(qdr_query_t *query)
 }
 
 void qdra_link_update_CT(qdr_core_t              *core,
-                             qd_field_iterator_t *name,
-                             qd_field_iterator_t *identity,
-                             qdr_query_t         *query,
-                             qd_parsed_field_t   *in_body)
+                         qdr_query_t         *query)
 
 {
+    qd_agent_request_t *request = query->request;
+    qd_field_iterator_t *name = qd_agent_get_request_name(request);
+    qd_field_iterator_t *identity = qd_agent_get_request_identity(request);
+
+
+    qd_parsed_field_t *in_body = 0;
     // If the request was successful then the statusCode MUST contain 200 (OK) and the body of the message
     // MUST contain a map containing the actual attributes of the entity updated. These MAY differ from those
     // requested.

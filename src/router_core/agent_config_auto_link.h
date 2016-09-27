@@ -21,17 +21,12 @@
 
 #include "router_core_private.h"
 
-void qdra_config_auto_link_get_first_CT(qdr_core_t *core, qdr_query_t *query, int offset);
 void qdra_config_auto_link_get_next_CT(qdr_core_t *core, qdr_query_t *query);
-void qdra_config_auto_link_create_CT(qdr_core_t *core, qd_field_iterator_t *name, qdr_query_t *query, qd_parsed_field_t *in_body);
-void qdra_config_auto_link_update_CT(qdr_core_t *core, qdr_query_t *query, qd_parsed_field_t *in_body);
-void qdra_config_auto_link_delete_CT(qdr_core_t *core, qdr_query_t *query, qd_field_iterator_t *name,
-                                     qd_field_iterator_t *identity);
+void qdra_config_auto_link_create_CT(qdr_core_t *core, qdr_query_t *query);
+void qdra_config_auto_link_update_CT(qdr_core_t *core, qdr_query_t *query);
+void qdra_config_auto_link_delete_CT(qdr_core_t *core, qdr_query_t *query);
 void qdra_config_auto_link_get_CT(qdr_core_t        *core,
-                                qd_field_iterator_t *name,
-                                qd_field_iterator_t *identity,
-                                qdr_query_t         *query,
-                                const char          *qdr_config_auto_link_columns[]);
+                                  qdr_query_t *query);
 #define QDR_CONFIG_AUTO_LINK_COLUMN_COUNT 11
 
 const char *qdr_config_auto_link_columns[QDR_CONFIG_AUTO_LINK_COLUMN_COUNT + 1];

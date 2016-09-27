@@ -927,7 +927,10 @@ void qd_router_setup_late(qd_dispatch_t *qd)
                             CORE_delivery_update);
 
     qd_router_python_setup(qd->router);
-    qdr_agent_set_router_core(qd->new_agent, qd->router->router_core);
+    qd_agent_set_router_core(qd->new_agent, qd->router->router_core);
+
+    register_handlers_1(qd->router->router_core, qd->new_agent);
+
     qd_timer_schedule(qd->router->timer, 1000);
 }
 

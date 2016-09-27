@@ -47,6 +47,8 @@ qd_error_t qd_router_configure_auto_link(qd_router_t *router, qd_entity_t *entit
 
 void qd_router_configure_free(qd_router_t *router);
 
+void register_handlers_1(qdr_core_t *core, qd_agent_t *agent);
+
 extern const char *QD_ROUTER_NODE_TYPE;
 extern const char *QD_ROUTER_ADDRESS_TYPE;
 extern const char *QD_ROUTER_LINK_TYPE;

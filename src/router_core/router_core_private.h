@@ -23,6 +23,7 @@
 #include <qpid/dispatch/router_core.h>
 #include <qpid/dispatch/threading.h>
 #include <qpid/dispatch/log.h>
+#include <qpid/dispatch/agent.h>
 #include <memory.h>
 
 typedef struct qdr_address_t         qdr_address_t;
@@ -136,10 +137,6 @@ struct qdr_action_t {
         //
         struct {
             qdr_query_t             *query;
-            int                      offset;
-            qd_field_iterator_t     *identity;
-            qd_field_iterator_t     *name;
-            qd_parsed_field_t       *in_body;
         } agent;
 
     } args;
@@ -154,10 +151,11 @@ DEQ_DECLARE(qdr_action_t, qdr_action_list_t);
 struct qdr_query_t {
     DEQ_LINKS(qdr_query_t);
     qdr_core_t              *core;
-    qd_router_entity_type_t  entity_type;
+    qd_router_entity_type_t  entity_type; // TODO - Remove
     void                    *context;
-    int                      columns[QDR_AGENT_MAX_COLUMNS];
-    qd_composed_field_t     *body;
+    qd_agent_request_t      *request;
+    int                      columns[QDR_AGENT_MAX_COLUMNS]; // TODO - Remove
+    qd_composed_field_t     *body; // TODO - Remove
     qdr_field_t             *next_key;
     int                      next_offset;
     bool                     more;
@@ -627,8 +625,7 @@ void qdr_link_outbound_detach_CT(qdr_core_t *core, qdr_link_t *link, qdr_error_t
 
 qdr_query_t *qdr_query(qdr_core_t              *core,
                        void                    *context,
-                       qd_router_entity_type_t  type,
-                       qd_composed_field_t     *body);
+                       qd_agent_request_t     *agent);
 
 //
 // Cause the core to check credit on an incoming link that might have CT credit but

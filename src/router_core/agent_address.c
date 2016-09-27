@@ -207,13 +207,15 @@ static void qdr_manage_advance_address_CT(qdr_query_t *query, qdr_address_t *add
         query->more = false;
 }
 
-void qdra_address_get_CT(qdr_core_t          *core,
-                         qd_field_iterator_t *name,
-                         qd_field_iterator_t *identity,
-                         qdr_query_t         *query,
-                         const char          *qdr_address_columns[])
+void qdra_address_get_CT(qdr_core_t  *core,
+                         qdr_query_t *query)
 {
     qdr_address_t *addr = 0;
+
+    qd_agent_request_t *request = query->request;
+
+    qd_field_iterator_t *name = qd_agent_get_request_name(request);
+    qd_field_iterator_t *identity = qd_agent_get_request_identity(request);
 
     if (identity) //If there is identity, ignore the name
         qd_hash_retrieve(core->addr_hash, identity, (void*) &addr);
@@ -247,6 +249,8 @@ void qdra_address_get_first_CT(qdr_core_t *core, qdr_query_t *query, int offset)
     //
     query->status = QD_AMQP_OK;
 
+    qd_agent_request_t *request = query->request;
+
     //
     // If the offset goes beyond the set of addresses, end the query now.
     //
@@ -268,6 +272,7 @@ void qdra_address_get_first_CT(qdr_core_t *core, qdr_query_t *query, int offset)
     // Write the columns of the address entity into the response body.
     //
     qdr_manage_write_address_list_CT(core, query, addr);
+    qd_agent_request_write_object(request, addr);
 
     //
     // Advance to the next address

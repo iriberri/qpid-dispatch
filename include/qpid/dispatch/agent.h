@@ -21,6 +21,8 @@
  */
 
 #include <qpid/dispatch/amqp.h>
+#include <qpid/dispatch/dispatch.h>
+#include <qpid/dispatch/iterator.h>
 
 
 typedef struct qd_agent_t qd_agent_t;
@@ -49,7 +51,7 @@ qd_error_t qd_agent_start(qd_agent_t *agent);
 void qd_agent_free(qd_agent_t *agent);
 
 /**
- * Writes a object to the response. Can be called multiple times if the response can contain several objects.
+ * Writes a object to the response. Can be called multiple times if the response contains several objects, for example in a query operation.
  * @param request - The request
  * @param object  - The object that needs to be written out
  */
@@ -57,11 +59,14 @@ void qd_agent_request_write_object(qd_agent_request_t *request, void *object);
 
 /**
  * Called as a final step to indicate the response if ready to be sent out
+ *
+ * For example, if the operation returned 3 rows, call qd_agent_request_write_object() three times and finally call qd_agent_request_complete()
+ *
  * @param ctx - context
  * @param status - The status of the response
  * @param request - The request
  */
-void qd_agent_request_complete(void *ctx, qd_amqp_error_t *status, qd_agent_request_t *request);
+void qd_agent_request_complete(void *ctx, const qd_amqp_error_t *status, qd_agent_request_t *request);
 
 typedef void (*qd_agent_handler_t) (void *context, qd_agent_request_t *request);
 
@@ -84,18 +89,21 @@ void qd_agent_register_handlers(void *ctx,
  * Getters for the components of a request (qd_agent_request_t).
  */
 int qd_agent_get_request_entity_type(qd_agent_request_t *request);
+int qd_agent_get_request_operation(qd_agent_request_t *request);
 int qd_agent_get_request_count(qd_agent_request_t *request);
 int qd_agent_get_request_offset(qd_agent_request_t *request);
 qd_field_iterator_t *qd_agent_get_request_correlation_id(qd_agent_request_t *request);
 qd_field_iterator_t *qd_agent_get_request_reply_to(qd_agent_request_t *request);
 qd_field_iterator_t *qd_agent_get_request_name(qd_agent_request_t *request);
 qd_field_iterator_t *qd_agent_get_request_identity(qd_agent_request_t *request);
+qd_agent_t *qd_agent_get_request_agent(qd_agent_request_t *request);
 
 /**
  * Returns specific attr values based on the attr_id
  */
 char *qd_agent_request_get_string(qd_agent_request_t *request, int attr_id);
 long qd_agent_request_get_long(qd_agent_request_t *request, int attr_id);
+int qd_agent_request_get_int(qd_agent_request_t *request, int attr_id);
 bool qd_agent_request_get_bool(qd_agent_request_t *request, int attr_id);
 
 /**
@@ -103,9 +111,12 @@ bool qd_agent_request_get_bool(qd_agent_request_t *request, int attr_id);
  */
 void qd_agent_request_set_string(qd_agent_request_t *request, char *value);
 void qd_agent_request_set_long(qd_agent_request_t *request, long value);
+void qd_agent_request_set_null(qd_agent_request_t *request);
 void qd_agent_request_set_bool(qd_agent_request_t *request, bool value);
+void qd_agent_request_set_int(qd_agent_request_t *request, int value);
 
 //This function is not part of the API, please ignore
-void qdr_agent_set_router_core(qd_agent_t *agent, qdr_core_t *router_core);
+void qd_agent_set_router_core(qd_agent_t *agent, qdr_core_t *router_core);
+qdr_core_t *qd_agent_get_router_core(qd_agent_t *agent);
 
 #endif
