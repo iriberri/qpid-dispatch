@@ -47,13 +47,6 @@ typedef enum {
     QD_REQUEST_BODY,
 } qd_request_attributes_t;
 
-typedef struct qd_management_work_item_t {
-    DEQ_LINKS(struct qd_management_work_item_t);
-    qd_agent_request_t *request;
-} qd_management_work_item_t;
-
-DEQ_DECLARE(qd_management_work_item_t, qd_management_work_list_t);
-
 typedef struct qd_entity_type_handler_t {
     qd_schema_entity_type_t      entity_type;
     void                         *ctx;
@@ -70,21 +63,8 @@ typedef struct {
     qd_agent_t *agent;
 } AgentAdapter;
 
-struct qd_agent_t {
-    qd_dispatch_t             *qd;
-    qd_timer_t                *timer;
-    AgentAdapter              *adapter;
-    char                      *address;
-    const char                *config_file;
-    qd_management_work_list_t  work_queue;
-    sys_mutex_t               *lock;
-    qd_log_source_t           *log_source;
-    qd_timer_t                *work_timer;
-    qdr_core_t                *router_core;
-    qd_entity_type_handler_t  *handlers[QD_SCHEMA_ENTITY_TYPE_ENUM_COUNT];
-};
-
 struct qd_agent_request_t {
+    DEQ_LINKS(struct qd_agent_request_t);
     qd_entity_type_handler_t     *entity_handler;
     qd_parsed_field_t            *params;
     qd_parsed_field_t            *in_body; // The  parsed field that holds the parsed contents of the management request body
@@ -100,6 +80,22 @@ struct qd_agent_request_t {
     bool                          map_initialized;
     qd_agent_t                   *agent;
     int                           columns[QD_AGENT_MAX_COLUMNS];
+};
+
+DEQ_DECLARE(qd_agent_request_t, qd_agent_request_work_list_t);
+
+struct qd_agent_t {
+    qd_dispatch_t             *qd;
+    qd_timer_t                *timer;
+    AgentAdapter              *adapter;
+    char                      *address;
+    const char                *config_file;
+    qd_agent_request_work_list_t  request_queue;
+    sys_mutex_t               *lock;
+    qd_log_source_t           *log_source;
+    qd_timer_t                *request_timer;
+    qdr_core_t                *router_core;
+    qd_entity_type_handler_t  *handlers[QD_SCHEMA_ENTITY_TYPE_ENUM_COUNT];
 };
 
 #define QD_AGENT_MAX_COLUMNS 64
@@ -157,7 +153,6 @@ static PyObject *qd_post_management_request(PyObject *self,
 
     qd_composed_field_t *field = qd_compose_subfield(0);
 
-
     //
     // Start a list and add cid, name, identity, reply_to, body to the list in that order.
     //
@@ -171,42 +166,37 @@ static PyObject *qd_post_management_request(PyObject *self,
 
     qd_compose_end_list(field);
 
-
     AgentAdapter *adapter = ((AgentAdapter*) self);
 
     //
-    // Create a request and add it to the work_queue
+    // Create a request and add it to the request_queue
     //
     qd_agent_request_t *request = NEW(qd_agent_request_t);
+    DEQ_ITEM_INIT(request);
+    request->entity_handler = adapter->agent->handlers[entity_type];
+    request->params = 0;
+    request->in_body = 0;
     request->buffers = qd_compose_buffers(field);
-
+    //TODO - Is this correct - why does a request need a ctx
+    request->ctx = adapter->agent->handlers[entity_type]->ctx;
     request->count = count;
     request->offset = offset;
     request->entity_type = entity_type;
     request->operation = operation;
-    request->in_body = 0;
-    request->params = 0;
-    request->out_body = 0;//qd_compose(QD_PERFORMATIVE_BODY_AMQP_VALUE, 0);
-    request->map_initialized = false;
-    request->respond = !!reply_to;
-    request->agent = adapter->agent;
-
-    request->entity_handler = adapter->agent->handlers[entity_type];
+    request->out_body = 0;
     request->attribute_count = qd_agent_request_get_attribute_count(request);
-
-    request->ctx = adapter->agent->handlers[entity_type]->ctx;
-    qd_management_work_item_t *work_item = NEW(qd_management_work_item_t);
-    DEQ_ITEM_INIT(work_item);
-    work_item->request = request;
+    request->respond = !!reply_to;
+    request->map_initialized = false;
+    request->agent = adapter->agent;
 
     //
     // Add work item to the work item list after locking the work item list
     //
     sys_mutex_lock(adapter->agent->lock);
-    DEQ_INSERT_TAIL(adapter->agent->work_queue, work_item);
+    DEQ_INSERT_TAIL(adapter->agent->request_queue, request);
     sys_mutex_unlock(adapter->agent->lock);
 
-    qd_timer_schedule(adapter->agent->work_timer, 0);
+    qd_timer_schedule(adapter->agent->request_timer, 0);
 
     return Py_None;
 }
@@ -274,14 +264,13 @@ static PyTypeObject AgentAdapterType = {
 };
 
 
-static void process_work_queue(void *context)
+static void process_request_queue(void *context)
 {
     qd_agent_t *agent = (qd_agent_t *)context;
 
-    qd_management_work_item_t *work_item = DEQ_HEAD(agent->work_queue);
+    qd_agent_request_t *request = DEQ_HEAD(agent->request_queue);
 
-    while(work_item) {
-        qd_agent_request_t *request = work_item->request;
+    while(request) {
 
         qd_entity_type_handler_t *handler = agent->handlers[request->entity_type];
         switch (request->operation) {
@@ -304,7 +293,7 @@ static void process_work_queue(void *context)
                 break;
         }
 
-        work_item = DEQ_NEXT(work_item);
+        request = DEQ_NEXT(request);
     }
 }
 
@@ -341,16 +330,15 @@ qd_agent_t* qd_agent(qd_dispatch_t *qd, char *address, const char *config_path)
     qd_agent_t *agent = NEW(qd_agent_t);
 
     agent->qd = qd;
-    agent->work_timer = qd_timer(qd, process_work_queue, agent);
+    agent->request_timer = qd_timer(qd, process_request_queue, agent);
     agent->address = address;
     agent->config_file = config_path;
     agent->log_source = qd_log_source("AGENT");
-    DEQ_INIT(agent->work_queue);
+    DEQ_INIT(agent->request_queue);
     agent->lock = sys_mutex();
     AgentAdapter *adapter = ((AgentAdapter*) adapterInstance);
     agent->adapter = adapter;
     adapter->agent = agent;
-
 
     //
     // Initialize the handlers to zeros so we can start clean
@@ -454,6 +442,7 @@ void qd_agent_request_free(qd_agent_request_t *request)
     free(request->params);
     free(request->in_body);
     free(request->out_body);
+    free(request);
 }
 
 
@@ -491,7 +480,8 @@ static void send_response(void *ctx, const qd_amqp_error_t *status, qd_agent_req
     qd_message_free(response_msg);
     qd_compose_free(fld);
     qd_field_iterator_free(reply_to);
-    qd_agent_request_free(request);
+
+    //qd_agent_request_free(request);
 
 }
 
@@ -506,7 +496,7 @@ static void qd_agent_request_insert_empty_query_results(qd_agent_request_t *requ
     qd_compose_insert_string(request->out_body, "attributeNames");
     qd_compose_start_list(request->out_body);
     qd_compose_end_list(request->out_body);
-
+    //add a "results" key to out_body
     qd_compose_insert_string(request->out_body, "results");
     qd_compose_start_list(request->out_body);
     qd_compose_end_list(request->out_body);

@@ -130,7 +130,6 @@ void qdra_config_address_get_next_CT(qdr_core_t *core, qdr_query_t *query)
     // If we have already populated the next_offset, use it.
     //
 
-
     if (query->next_offset > 0) {
         if (query->next_offset < DEQ_SIZE(core->addr_config)) {
             addr = DEQ_HEAD(core->addr_config);
@@ -139,7 +138,6 @@ void qdra_config_address_get_next_CT(qdr_core_t *core, qdr_query_t *query)
         }
     }
     else {
-
         //
         // If the offset goes beyond the set of objects, end the query now.
         //
@@ -150,7 +148,6 @@ void qdra_config_address_get_next_CT(qdr_core_t *core, qdr_query_t *query)
             //
             // Run to the object at the offset.
             //
-
             addr = DEQ_HEAD(core->addr_config);
 
             for (int i = 0; i < offset && addr; i++)
@@ -162,7 +159,6 @@ void qdra_config_address_get_next_CT(qdr_core_t *core, qdr_query_t *query)
             query->next_offset = offset;
         }
     }
-
 
     if (addr) {
         //

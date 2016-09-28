@@ -68,6 +68,7 @@ static void qd_manage_response_handler(void *context, const qd_amqp_error_t *sta
     if (qd_agent_get_request_operation(request) == QD_SCHEMA_ENTITY_OPERATION_QUERY) {
 
         if (status->status / 100 == 2) { // There is no error, proceed to conditionally call get_next
+
             if (more) {
                ctx->current_count++; // Increment how many you have at hand
                if (qd_agent_get_request_count(request) != ctx->current_count) {
@@ -97,7 +98,6 @@ static void qd_manage_response_handler(void *context, const qd_amqp_error_t *sta
 
 static void qd_core_agent_query_handler(void *ctx, qd_agent_request_t *request)
 {
-    printf("In qd_core_agent_query_handler 1 \n");
     qd_management_context_t *context = qd_management_context();
 
     qdr_core_t *core = (qdr_core_t *)ctx;
@@ -108,9 +108,7 @@ static void qd_core_agent_query_handler(void *ctx, qd_agent_request_t *request)
     context->query = qdr_manage_query(context, core, request);
 
     qdr_query_get_next(context->query);
-
 }
-
 
 
 static void qd_core_agent_read_handler(void *ctx, qd_agent_request_t *request)
@@ -186,7 +184,6 @@ void register_handlers_1(qdr_core_t *core, qd_agent_t *agent) {
 void qdr_management_agent_on_message(void *context, qd_message_t *msg, int unused_link_id, int unused_cost)
 {
     qdr_core_t *core = (qdr_core_t*) context;
-
 
     qdr_send_to2(core, msg, MANAGEMENT_INTERNAL, false, false);
 
