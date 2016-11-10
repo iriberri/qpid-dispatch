@@ -661,7 +661,6 @@ static void thread_process_listeners_LH(qd_server_t *qd_server)
 
         // qd_server->lock is already locked
         DEQ_INSERT_TAIL(qd_server->connections, ctx);
-        qd_entity_cache_add(QD_CONNECTION_TYPE, ctx);
 
         //
         // Get a pointer to the transport so we can insert security components into it
@@ -1199,7 +1198,6 @@ static void cxtr_try_open(void *context)
     ctx->pn_cxtr = qdpn_connector(ct->server->driver, ct->config->host, ct->config->port, ct->config->protocol_family, (void*) ctx);
     if (ctx->pn_cxtr) {
         DEQ_INSERT_TAIL(ct->server->connections, ctx);
-        qd_entity_cache_add(QD_CONNECTION_TYPE, ctx);
     }
     sys_mutex_unlock(ct->server->lock);
 
