@@ -669,9 +669,22 @@ bool qdr_forward_link_balanced_CT(qdr_core_t     *core,
     }
 
     if (conn) {
+        //
+        // Create a new qdr_session
+        //
+        qdr_session_t  *sess    = new_qdr_session_t();
+        ZERO(sess);
+        sess->identity          = qdr_identifier(core);
+        sess->conn              = conn;
+        sess->core              = core;
+
+        //
+        // Create a new qdr_link and associate it with the qdr_session
+        //
         qdr_link_t *out_link = new_qdr_link_t();
         ZERO(out_link);
         out_link->core           = core;
+        out_link->sess           = sess;
         out_link->identity       = qdr_identifier(core);
         out_link->conn           = conn;
         out_link->link_type      = QD_LINK_ENDPOINT;
@@ -682,15 +695,36 @@ bool qdr_forward_link_balanced_CT(qdr_core_t     *core,
         out_link->name = (char*) malloc(strlen(in_link->name) + 1);
         strcpy(out_link->name, in_link->name);
 
+        //
+        // Tie up the connected links
+        //
         out_link->connected_link = in_link;
         in_link->connected_link  = out_link;
 
         DEQ_INSERT_TAIL(core->open_links, out_link);
+        DEQ_INSERT_TAIL(core->open_sessions, sess);
         qdr_add_link_ref(&conn->links, out_link, QDR_LINK_LIST_CLASS_CONNECTION);
 
+        //
+        // Queue up a begin to be sent to the target container.
+        //
         qdr_connection_work_t *work = new_qdr_connection_work_t();
         ZERO(work);
+        work->work_type = QDR_CONNECTION_WORK_FIRST_BEGIN;
+        work->sess      = sess;
+        work->error     = 0;
+        work->source    = 0;
+        work->target    = 0;
+        qdr_connection_enqueue_work_CT(core, conn, work);
+
+
+        //
+        // Queue up an attach to be sent to the target container.
+        //
+        work = new_qdr_connection_work_t();
+        ZERO(work);
         work->work_type = QDR_CONNECTION_WORK_FIRST_ATTACH;
+        work->sess      = sess;
         work->link      = out_link;
         work->source    = source;
         work->target    = target;

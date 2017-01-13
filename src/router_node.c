@@ -483,6 +483,43 @@ static void AMQP_disposition_handler(void* context, qd_link_t *link, pn_delivery
         pn_delivery_settle(pnd);
 }
 
+static int AMQP_session_begin_handler(void* context, qd_session_t *sess)
+{
+    qd_connection_t  *conn     = qd_session_connection(sess);
+    qdr_connection_t *qdr_conn = (qdr_connection_t*) qd_connection_get_context(conn);
+
+    qdr_session_t *qdr_session = qdr_session_first_begin(qdr_conn);
+
+    qdr_session_set_context(qdr_session, sess);
+    qd_session_set_context(sess, qdr_session);
+
+    return 0;
+}
+
+
+static int AMQP_session_end_handler(void* context, qd_session_t *sess, qd_detach_type_t dt)
+{
+    qdr_session_t    *qdr_sess    = (qdr_session_t*) qd_session_get_context(sess);
+
+    pn_condition_t *cond   = qd_session_pn(sess) ? pn_session_remote_condition(qd_session_pn(sess)) : 0;
+
+    qdr_error_t *error = qdr_error_from_pn(cond);
+
+    if (!qdr_sess)
+        return 0;
+
+    qdr_session_end(qdr_sess, dt, error);
+
+    qd_session_set_context(sess, 0);
+
+    if (dt == QD_LOST) {
+        qdr_session_set_context(qdr_sess, 0);
+        qd_session_free(sess);
+    }
+
+    return 0;
+}
+
 
 /**
  * New Incoming Link Handler
@@ -490,8 +527,12 @@ static void AMQP_disposition_handler(void* context, qd_link_t *link, pn_delivery
 static int AMQP_incoming_link_handler(void* context, qd_link_t *link)
 {
     qd_connection_t  *conn     = qd_link_connection(link);
+    qd_session_t     *sess     = qd_link_session(link);
     qdr_connection_t *qdr_conn = (qdr_connection_t*) qd_connection_get_context(conn);
-    qdr_link_t       *qdr_link = qdr_link_first_attach(qdr_conn, QD_INCOMING,
+    qdr_session_t    *qdr_sess = (qdr_session_t*) qd_session_get_context(sess);
+    qdr_link_t       *qdr_link = qdr_link_first_attach(qdr_conn,
+                                                       qdr_sess,
+                                                       QD_INCOMING,
                                                        qdr_terminus(qd_link_remote_source(link)),
                                                        qdr_terminus(qd_link_remote_target(link)),
                                                        pn_link_name(qd_link_pn(link)));
@@ -508,8 +549,12 @@ static int AMQP_incoming_link_handler(void* context, qd_link_t *link)
 static int AMQP_outgoing_link_handler(void* context, qd_link_t *link)
 {
     qd_connection_t  *conn     = qd_link_connection(link);
+    qd_session_t     *sess     = qd_link_session(link);
     qdr_connection_t *qdr_conn = (qdr_connection_t*) qd_connection_get_context(conn);
-    qdr_link_t       *qdr_link = qdr_link_first_attach(qdr_conn, QD_OUTGOING,
+    qdr_session_t    *qdr_sess = (qdr_session_t*) qd_session_get_context(sess);
+    qdr_link_t       *qdr_link = qdr_link_first_attach(qdr_conn,
+                                                       qdr_sess,
+                                                       QD_OUTGOING,
                                                        qdr_terminus(qd_link_remote_source(link)),
                                                        qdr_terminus(qd_link_remote_target(link)),
                                                        pn_link_name(qd_link_pn(link)));
@@ -756,7 +801,9 @@ static void qd_router_timer_handler(void *context)
 }
 
 
-static qd_node_type_t router_node = {"router", 0, 0,
+static qd_node_type_t router_node = {"router",
+                                     0,
+                                     0,
                                      AMQP_rx_handler,
                                      AMQP_disposition_handler,
                                      AMQP_incoming_link_handler,
@@ -769,7 +816,9 @@ static qd_node_type_t router_node = {"router", 0, 0,
                                      0,   // node_destroyed_handler
                                      AMQP_inbound_opened_handler,
                                      AMQP_outbound_opened_handler,
-                                     AMQP_closed_handler};
+                                     AMQP_closed_handler,
+                                     AMQP_session_begin_handler,
+                                     AMQP_session_end_handler};
 static int type_registered = 0;
 
 qd_router_t *qd_router(qd_dispatch_t *qd, qd_router_mode_t mode, const char *area, const char *id)
@@ -836,19 +885,72 @@ static void CORE_connection_activate(void *context, qdr_connection_t *conn, bool
 }
 
 
+static void CORE_session_first_begin(void             *context,
+                                     qdr_connection_t *conn,
+                                     qdr_session_t    *qdr_sess)
+{
+    qd_router_t     *router = (qd_router_t*) context;
+    qd_connection_t *qconn  = (qd_connection_t*) qdr_connection_get_context(conn);
+    qd_session_t    *qsess  = qdr_session_get_context(qdr_sess);
+
+    if (!qsess) {
+        qsess = qd_session(router->node, qconn);
+
+        //
+        // Associate the qd_session and the qdr_session to each other.
+        //
+        qdr_session_set_context(qdr_sess, qsess);
+        qd_session_set_context(qsess, qdr_sess);
+    }
+
+    pn_session_open(qd_session_pn(qsess));
+}
+
+
+static void CORE_session_second_begin(void *context, qdr_session_t *sess)
+{
+    qd_session_t *qsess = (qd_session_t*) qdr_session_get_context(sess);
+
+    if (!qsess) {
+        return;
+    }
+    pn_session_open(qd_session_pn(qsess));
+}
+
+
+static void CORE_session_end(void *context,
+                             qdr_connection_t *conn,
+                             qdr_session_t *qdr_sess,
+                             bool first)
+{
+    qd_session_t *sess = (qd_session_t*) qdr_session_get_context(qdr_sess);
+
+    if (!sess)
+        return;
+
+    qd_session_close(sess);
+
+    qd_session_set_context(sess, 0);
+
+    if (!first)
+        qd_session_free(sess);
+}
+
 static void CORE_link_first_attach(void             *context,
                                    qdr_connection_t *conn,
+                                   qdr_session_t    *qdr_sess,
                                    qdr_link_t       *link, 
                                    qdr_terminus_t   *source,
                                    qdr_terminus_t   *target)
 {
     qd_router_t     *router = (qd_router_t*) context;
-    qd_connection_t *qconn  = (qd_connection_t*) qdr_connection_get_context(conn);
+
+    qd_session_t *sess = (qd_session_t *)qdr_session_get_context(qdr_sess);
 
     //
     // Create a new link to be attached
     //
-    qd_link_t *qlink = qd_link(router->node, qconn, qdr_link_direction(link), qdr_link_name(link));
+    qd_link_t *qlink = qd_link(router->node, sess, qdr_link_direction(link), qdr_link_name(link));
 
     //
     // Copy the source and target termini to the link
@@ -1081,8 +1183,12 @@ void qd_router_setup_late(qd_dispatch_t *qd)
     qd->router->tracemask   = qd_tracemask();
     qd->router->router_core = qdr_core(qd, qd->router->router_mode, qd->router->router_area, qd->router->router_id);
 
-    qdr_connection_handlers(qd->router->router_core, (void*) qd->router,
+    qdr_connection_handlers(qd->router->router_core,
+                            (void*) qd->router,
                             CORE_connection_activate,
+                            CORE_session_first_begin,
+                            CORE_session_second_begin,
+                            CORE_session_end,
                             CORE_link_first_attach,
                             CORE_link_second_attach,
                             CORE_link_detach,

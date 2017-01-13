@@ -63,15 +63,19 @@ typedef enum {
 typedef enum {
     QD_DETACHED,  // Protocol detach
     QD_CLOSED,    // Protocol close
+    QD_END,       // Protocol end
     QD_LOST       // Connection or session closed
 } qd_detach_type_t;
 
 
 typedef struct qd_node_t     qd_node_t;
+typedef struct qd_session_t  qd_session_t;
 typedef struct qd_link_t     qd_link_t;
 
 typedef void (*qd_container_delivery_handler_t)    (void *node_context, qd_link_t *link, pn_delivery_t *delivery);
 typedef int  (*qd_container_link_handler_t)        (void *node_context, qd_link_t *link);
+typedef int  (*qd_container_session_handler_t)     (void *node_context, qd_session_t *sess);
+typedef int  (*qd_container_session_end_handler_t) (void *node_context, qd_session_t *sess, qd_detach_type_t dt);
 typedef int  (*qd_container_link_detach_handler_t) (void *node_context, qd_link_t *link, qd_detach_type_t dt);
 typedef void (*qd_container_node_handler_t)        (void *type_context, qd_node_t *node);
 typedef int  (*qd_container_conn_handler_t)        (void *type_context, qd_connection_t *conn, void *context);
@@ -95,10 +99,10 @@ typedef struct {
     qd_container_delivery_handler_t disp_handler;
 
     /** Invoked when an attach for a new incoming link is received. */
-    qd_container_link_handler_t incoming_handler;
+    qd_container_link_handler_t incoming_link_handler;
 
     /** Invoked when an attach for a new outgoing link is received. */
-    qd_container_link_handler_t outgoing_handler;
+    qd_container_link_handler_t outgoing_link_handler;
 
     /** Invoked when an activated connection is available for writing. */
     qd_container_conn_handler_t writable_handler;
@@ -131,6 +135,13 @@ typedef struct {
 
     /** Invoked when a connection is closed. */
     qd_container_conn_handler_t  conn_closed_handler;
+
+    /** Invoked when a connection is opened. */
+    qd_container_session_handler_t  session_begin_handler;
+
+    /** Invoked when a session is closed. */
+    qd_container_session_end_handler_t  session_end_handler;
+
 } qd_node_type_t;
 
 
@@ -153,8 +164,17 @@ void qd_container_node_set_context(qd_node_t *node, void *node_context);
 qd_dist_mode_t qd_container_node_get_dist_modes(const qd_node_t *node);
 qd_lifetime_policy_t qd_container_node_get_life_policy(const qd_node_t *node);
 
-qd_link_t *qd_link(qd_node_t *node, qd_connection_t *conn, qd_direction_t dir, const char *name);
+qd_link_t *qd_link(qd_node_t *node, qd_session_t *sess, qd_direction_t dir, const char *name);
 void qd_link_free(qd_link_t *link);
+
+qd_session_t *qd_session(qd_node_t *node, qd_connection_t *conn);
+void qd_session_free(qd_session_t *sess);
+
+/**
+ * Context associated with the session for storing session-specific state.
+ */
+void qd_session_set_context(qd_session_t *sess, void *sess_context);
+void *qd_session_get_context(qd_session_t *sess);
 
 /**
  * Context associated with the link for storing link-specific state.
@@ -173,8 +193,9 @@ void policy_notify_opened(void *container, qd_connection_t *conn, void *context)
 qd_direction_t qd_link_direction(const qd_link_t *link);
 pn_snd_settle_mode_t qd_link_remote_snd_settle_mode(const qd_link_t *link);
 qd_connection_t *qd_link_connection(qd_link_t *link);
+qd_connection_t *qd_session_connection(qd_session_t *sess);
 pn_link_t *qd_link_pn(qd_link_t *link);
-pn_session_t *qd_link_pn_session(qd_link_t *link);
+qd_session_t *qd_link_session(qd_link_t *link);
 pn_terminus_t *qd_link_source(qd_link_t *link);
 pn_terminus_t *qd_link_target(qd_link_t *link);
 pn_terminus_t *qd_link_remote_source(qd_link_t *link);
@@ -184,6 +205,9 @@ void qd_link_close(qd_link_t *link);
 void qd_link_detach(qd_link_t *link);
 bool qd_link_drain_changed(qd_link_t *link, bool *mode);
 void qd_link_free(qd_link_t *link);
+
+void qd_session_close(qd_session_t *sess);
+pn_session_t *qd_session_pn(qd_session_t *sess);
 
 ///@}
 #endif

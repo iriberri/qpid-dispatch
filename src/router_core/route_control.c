@@ -141,7 +141,8 @@ static void qdr_auto_link_activate_CT(qdr_core_t *core, qdr_auto_link_t *al, qdr
                 qdr_terminus_set_address(term, al->external_addr);
             else
                 qdr_terminus_set_address(term, &key[2]); // truncate the "Mp" annotation (where p = phase)
-            al->link = qdr_create_link_CT(core, conn, QD_LINK_ENDPOINT, al->dir, source, target);
+            qdr_session_t *sess = qdr_create_session_CT(core, conn);
+            al->link = qdr_create_link_CT(core, conn, sess, QD_LINK_ENDPOINT, al->dir, source, target);
             al->link->auto_link = al;
             al->state = QDR_AUTO_LINK_STATE_ATTACHING;
         }

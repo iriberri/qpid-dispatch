@@ -39,6 +39,7 @@ typedef struct qdr_delivery_t        qdr_delivery_t;
 typedef struct qdr_terminus_t        qdr_terminus_t;
 typedef struct qdr_error_t           qdr_error_t;
 typedef struct qdr_connection_info_t qdr_connection_info_t;
+typedef struct qdr_session_t         qdr_session_t;
 
 typedef enum {
     QD_ROUTER_MODE_STANDALONE,  ///< Standalone router.  No routing protocol participation
@@ -484,6 +485,7 @@ const char *qdr_link_name(const qdr_link_t *link);
  * @return A pointer to a new qdr_link_t object to track the link
  */
 qdr_link_t *qdr_link_first_attach(qdr_connection_t *conn,
+                                  qdr_session_t    *sess,
                                   qd_direction_t    dir,
                                   qdr_terminus_t   *source,
                                   qdr_terminus_t   *target,
@@ -543,8 +545,44 @@ void qdr_link_process_deliveries(qdr_core_t *core, qdr_link_t *link, int credit)
 
 void qdr_link_flow(qdr_core_t *core, qdr_link_t *link, int credit, bool drain_mode);
 
-typedef void (*qdr_link_first_attach_t)  (void *context, qdr_connection_t *conn, qdr_link_t *link, 
-                                          qdr_terminus_t *source, qdr_terminus_t *target);
+/**
+ ******************************************************************************
+ * Session functions
+ ******************************************************************************
+ */
+/**
+ * Store an arbitrary void pointer in the qdr_session_t object.
+ */
+void qdr_session_set_context(qdr_session_t *sess, void *context);
+
+/**
+ * Retrieve the stored void pointer from the qdr_session_t object.
+ */
+void *qdr_session_get_context(const qdr_session_t *sess);
+qdr_session_t *qdr_session_first_begin(qdr_connection_t *conn);
+void qdr_session_end(qdr_session_t *sess, qd_detach_type_t dt, qdr_error_t *error);
+
+/**
+ ******************************************************************************
+ * Session functions
+ ******************************************************************************
+ */
+typedef void (*qdr_session_first_begin_t)  (void *context, qdr_connection_t *conn, qdr_session_t *sess);
+typedef void (*qdr_session_second_begin_t) (void *context, qdr_session_t *sess);
+typedef void (*qdr_session_end_t)          (void *context, qdr_connection_t *conn, qdr_session_t *sess, bool first);
+/**
+ ******************************************************************************
+ * Link functions
+ ******************************************************************************
+ */
+
+typedef void (*qdr_link_first_attach_t)  (void *context,
+                                          qdr_connection_t *conn,
+                                          qdr_session_t    *sess,
+                                          qdr_link_t       *link,
+                                          qdr_terminus_t   *source,
+                                          qdr_terminus_t   *target);
+
 typedef void (*qdr_link_second_attach_t) (void *context, qdr_link_t *link,
                                           qdr_terminus_t *source, qdr_terminus_t *target);
 typedef void (*qdr_link_detach_t)        (void *context, qdr_link_t *link, qdr_error_t *error, bool first, bool close);
@@ -559,6 +597,9 @@ typedef void (*qdr_delivery_update_t)    (void *context, qdr_delivery_t *dlv, ui
 void qdr_connection_handlers(qdr_core_t                *core,
                              void                      *context,
                              qdr_connection_activate_t  activate,
+                             qdr_session_first_begin_t  first_begin,
+                             qdr_session_second_begin_t second_begin,
+                             qdr_session_end_t          end,
                              qdr_link_first_attach_t    first_attach,
                              qdr_link_second_attach_t   second_attach,
                              qdr_link_detach_t          detach,

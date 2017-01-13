@@ -27,6 +27,10 @@ static void qdr_connection_opened_CT(qdr_core_t *core, qdr_action_t *action, boo
 static void qdr_connection_closed_CT(qdr_core_t *core, qdr_action_t *action, bool discard);
 static void qdr_link_inbound_first_attach_CT(qdr_core_t *core, qdr_action_t *action, bool discard);
 static void qdr_link_inbound_second_attach_CT(qdr_core_t *core, qdr_action_t *action, bool discard);
+static void qdr_session_inbound_first_begin_CT(qdr_core_t *core, qdr_action_t *action, bool discard);
+//static void qdr_session_inbound_second_begin_CT(qdr_core_t *core, qdr_action_t *action, bool discard);
+static void qdr_session_outbound_second_begin_CT(qdr_core_t *core, qdr_session_t *sess);
+static void qdr_session_inbound_end_CT(qdr_core_t *core, qdr_action_t *action, bool discard);
 static void qdr_link_inbound_detach_CT(qdr_core_t *core, qdr_action_t *action, bool discard);
 
 ALLOC_DEFINE(qdr_connection_t);
@@ -226,22 +230,40 @@ int qdr_connection_process(qdr_connection_t *conn)
         DEQ_REMOVE_HEAD(work_list);
 
         switch (work->work_type) {
-        case QDR_CONNECTION_WORK_FIRST_ATTACH :
-            core->first_attach_handler(core->user_context, conn, work->link, work->source, work->target);
-            break;
+            case QDR_CONNECTION_WORK_FIRST_BEGIN :
+                core->first_begin_handler(core->user_context, conn, work->sess);
+                break;
 
-        case QDR_CONNECTION_WORK_SECOND_ATTACH :
-            core->second_attach_handler(core->user_context, work->link, work->source, work->target);
-            break;
+            case QDR_CONNECTION_WORK_SECOND_BEGIN :
+                core->second_begin_handler(core->user_context, work->sess);
+                break;
 
-        case QDR_CONNECTION_WORK_FIRST_DETACH :
-            core->detach_handler(core->user_context, work->link, work->error, true, work->close_link);
-            break;
+            case QDR_CONNECTION_WORK_FIRST_END :
+                core->end_handler(core->user_context, conn, work->sess, true);
+                break;
 
-        case QDR_CONNECTION_WORK_SECOND_DETACH :
-            core->detach_handler(core->user_context, work->link, work->error, false, work->close_link);
-            free_qdr_link_t(work->link);
-            break;
+            case QDR_CONNECTION_WORK_SECOND_END : {
+                core->end_handler(core->user_context, conn, work->sess, false);
+                free_qdr_session_t(work->sess);
+                break;
+            }
+
+            case QDR_CONNECTION_WORK_FIRST_ATTACH :
+                core->first_attach_handler(core->user_context, conn, work->sess, work->link, work->source, work->target);
+                break;
+
+            case QDR_CONNECTION_WORK_SECOND_ATTACH :
+                core->second_attach_handler(core->user_context, work->link, work->source, work->target);
+                break;
+
+            case QDR_CONNECTION_WORK_FIRST_DETACH :
+                core->detach_handler(core->user_context, work->link, work->error, true, work->close_link);
+                break;
+
+            case QDR_CONNECTION_WORK_SECOND_DETACH :
+                core->detach_handler(core->user_context, work->link, work->error, false, work->close_link);
+                free_qdr_link_t(work->link);
+                break;
         }
 
         qdr_terminus_free(work->source);
@@ -288,6 +310,17 @@ int qdr_connection_process(qdr_connection_t *conn)
     return event_count;
 }
 
+
+void qdr_session_set_context(qdr_session_t *sess, void *context)
+{
+    if (sess)
+        sess->user_context = context;
+}
+
+void *qdr_session_get_context(const qdr_session_t *sess)
+{
+    return sess ? sess->user_context : 0;
+}
 
 void qdr_link_set_context(qdr_link_t *link, void *context)
 {
@@ -351,6 +384,7 @@ const char *qdr_link_name(const qdr_link_t *link)
 
 
 qdr_link_t *qdr_link_first_attach(qdr_connection_t *conn,
+                                  qdr_session_t    *sess,
                                   qd_direction_t    dir,
                                   qdr_terminus_t   *source,
                                   qdr_terminus_t   *target,
@@ -362,6 +396,7 @@ qdr_link_t *qdr_link_first_attach(qdr_connection_t *conn,
 
     ZERO(link);
     link->core = conn->core;
+    link->sess = sess;
     link->identity = qdr_identifier(conn->core);
     link->conn = conn;
     link->name = (char*) malloc(strlen(name) + 1);
@@ -379,16 +414,34 @@ qdr_link_t *qdr_link_first_attach(qdr_connection_t *conn,
     else if (qdr_terminus_has_capability(local_terminus, QD_CAPABILITY_ROUTER_DATA))
         link->link_type = QD_LINK_ROUTER;
 
-    action->args.connection.conn   = conn;
-    action->args.connection.link   = link;
-    action->args.connection.dir    = dir;
-    action->args.connection.source = source;
-    action->args.connection.target = target;
+    action->args.connection.conn    = conn;
+    action->args.connection.session = sess;
+    action->args.connection.link    = link;
+    action->args.connection.dir     = dir;
+    action->args.connection.source  = source;
+    action->args.connection.target  = target;
     qdr_action_enqueue(conn->core, action);
 
     return link;
 }
 
+
+qdr_session_t *qdr_session_first_begin(qdr_connection_t *conn)
+{
+    qdr_action_t   *action = qdr_action(qdr_session_inbound_first_begin_CT, "session_first_begin");
+    qdr_session_t  *sess   = new_qdr_session_t();
+    ZERO(sess);
+
+    sess->identity                    = qdr_identifier(conn->core);
+    sess->conn                        = conn;
+    sess->core                        = conn->core;
+    action->args.connection.conn      = conn;
+    action->args.connection.session   = sess;
+
+    qdr_action_enqueue(conn->core, action);
+
+    return sess;
+}
 
 void qdr_link_second_attach(qdr_link_t *link, qdr_terminus_t *source, qdr_terminus_t *target)
 {
@@ -413,9 +466,23 @@ void qdr_link_detach(qdr_link_t *link, qd_detach_type_t dt, qdr_error_t *error)
 }
 
 
+void qdr_session_end(qdr_session_t *sess, qd_detach_type_t dt, qdr_error_t *error)
+{
+    qdr_action_t *action = qdr_action(qdr_session_inbound_end_CT, "session_end");
+
+    action->args.connection.conn    = sess->conn;
+    action->args.connection.session = sess;
+    action->args.connection.error   = error;
+    action->args.connection.dt     = dt;
+    qdr_action_enqueue(sess->core, action);
+}
+
 void qdr_connection_handlers(qdr_core_t                *core,
                              void                      *context,
                              qdr_connection_activate_t  activate,
+                             qdr_session_first_begin_t  first_begin,
+                             qdr_session_second_begin_t second_begin,
+                             qdr_session_end_t          end,
                              qdr_link_first_attach_t    first_attach,
                              qdr_link_second_attach_t   second_attach,
                              qdr_link_detach_t          detach,
@@ -429,6 +496,9 @@ void qdr_connection_handlers(qdr_core_t                *core,
 {
     core->user_context            = context;
     core->activate_handler        = activate;
+    core->first_begin_handler     = first_begin;
+    core->second_begin_handler    = second_begin;
+    core->end_handler             = end;
     core->first_attach_handler    = first_attach;
     core->second_attach_handler   = second_attach;
     core->detach_handler          = detach;
@@ -666,8 +736,37 @@ static void qdr_link_cleanup_CT(qdr_core_t *core, qdr_connection_t *conn, qdr_li
 }
 
 
+qdr_session_t *qdr_create_session_CT(qdr_core_t       *core,
+                                     qdr_connection_t *conn)
+{
+    qdr_session_t  *sess    = new_qdr_session_t();
+    ZERO(sess);
+    sess->identity          = qdr_identifier(core);
+    sess->conn              = conn;
+    sess->core              = core;
+
+    DEQ_INSERT_TAIL(core->open_sessions, sess);
+
+    //
+    // Queue up a begin to be sent to the target container.
+    //
+    qdr_connection_work_t *work = new_qdr_connection_work_t();
+    ZERO(work);
+    work->work_type = QDR_CONNECTION_WORK_FIRST_BEGIN;
+    work->sess      = sess;
+    work->error     = 0;
+    work->source    = 0;
+    work->target    = 0;
+    qdr_connection_enqueue_work_CT(core, conn, work);
+
+    return sess;
+
+}
+
+
 qdr_link_t *qdr_create_link_CT(qdr_core_t       *core,
                                qdr_connection_t *conn,
+                               qdr_session_t    *sess,
                                qd_link_type_t    link_type,
                                qd_direction_t    dir,
                                qdr_terminus_t   *source,
@@ -683,6 +782,7 @@ qdr_link_t *qdr_create_link_CT(qdr_core_t       *core,
     link->identity       = qdr_identifier(core);
     link->user_context   = 0;
     link->conn           = conn;
+    link->sess           = sess;
     link->link_type      = link_type;
     link->link_direction = dir;
     link->capacity       = conn->link_capacity;
@@ -703,6 +803,7 @@ qdr_link_t *qdr_create_link_CT(qdr_core_t       *core,
     work->link      = link;
     work->source    = source;
     work->target    = target;
+    work->sess      = sess;
     work->error     = 0;
 
     qdr_connection_enqueue_work_CT(core, conn, work);
@@ -751,6 +852,42 @@ void qdr_link_outbound_detach_CT(qdr_core_t *core, qdr_link_t *link, qdr_error_t
     qdr_connection_enqueue_work_CT(core, link->conn, work);
 }
 
+/*static void qdr_session_outbound_end_CT(qdr_core_t *core, qdr_session_t *sess)
+{
+    qdr_connection_work_t *work = new_qdr_connection_work_t();
+    ZERO(work);
+
+    work->work_type = QDR_CONNECTION_WORK_FIRST_END;
+    work->sess = sess;
+
+    qdr_connection_enqueue_work_CT(core, sess->conn, work);
+
+}*/
+
+static void qdr_session_inbound_first_begin_CT(qdr_core_t *core, qdr_action_t *action, bool discard)
+{
+    if (discard)
+        return;
+
+    qdr_session_t     *sess   = action->args.connection.session;
+
+    DEQ_INSERT_TAIL(core->open_sessions, sess);
+
+    // Send out the outbound second begin.
+    qdr_session_outbound_second_begin_CT(core, sess);
+}
+
+
+static void qdr_session_outbound_second_begin_CT(qdr_core_t *core, qdr_session_t *sess)
+{
+    qdr_connection_work_t *work = new_qdr_connection_work_t();
+    ZERO(work);
+
+    work->work_type = QDR_CONNECTION_WORK_SECOND_BEGIN;
+    work->sess = sess;
+
+    qdr_connection_enqueue_work_CT(core, sess->conn, work);
+}
 
 static void qdr_link_outbound_second_attach_CT(qdr_core_t *core, qdr_link_t *link, qdr_terminus_t *source, qdr_terminus_t *target)
 {
@@ -1049,10 +1186,13 @@ static void qdr_connection_opened_CT(qdr_core_t *core, qdr_action_t *action, boo
                 // The connector-side of inter-router connections is responsible for setting up the
                 // inter-router links:  Two (in and out) for control, two for routed-message transfer.
                 //
-                (void) qdr_create_link_CT(core, conn, QD_LINK_CONTROL, QD_INCOMING, qdr_terminus_router_control(), qdr_terminus_router_control());
-                (void) qdr_create_link_CT(core, conn, QD_LINK_CONTROL, QD_OUTGOING, qdr_terminus_router_control(), qdr_terminus_router_control());
-                (void) qdr_create_link_CT(core, conn, QD_LINK_ROUTER,  QD_INCOMING, qdr_terminus_router_data(), qdr_terminus_router_data());
-                (void) qdr_create_link_CT(core, conn, QD_LINK_ROUTER,  QD_OUTGOING, qdr_terminus_router_data(), qdr_terminus_router_data());
+
+                qdr_session_t *sess = qdr_create_session_CT(core, conn);
+
+                (void) qdr_create_link_CT(core, conn, sess, QD_LINK_CONTROL, QD_INCOMING, qdr_terminus_router_control(), qdr_terminus_router_control());
+                (void) qdr_create_link_CT(core, conn, sess, QD_LINK_CONTROL, QD_OUTGOING, qdr_terminus_router_control(), qdr_terminus_router_control());
+                (void) qdr_create_link_CT(core, conn, sess, QD_LINK_ROUTER,  QD_INCOMING, qdr_terminus_router_data(), qdr_terminus_router_data());
+                (void) qdr_create_link_CT(core, conn, sess, QD_LINK_ROUTER,  QD_OUTGOING, qdr_terminus_router_data(), qdr_terminus_router_data());
             }
         }
 
@@ -1539,4 +1679,32 @@ static void qdr_link_inbound_detach_CT(qdr_core_t *core, qdr_action_t *action, b
         qdr_error_free(error);
 }
 
+static void qdr_session_inbound_end_CT(qdr_core_t *core, qdr_action_t *action, bool discard)
+{
+    if (discard)
+        return;
 
+    qdr_session_t    *sess      = action->args.connection.session;
+    qdr_error_t      *error     = action->args.connection.error;
+    qd_detach_type_t  dt        = action->args.connection.dt;
+
+    DEQ_REMOVE(core->open_sessions, sess);
+
+    if (dt == QD_LOST) {
+        free_qdr_session_t(sess);
+        qdr_error_free(error);
+    }
+    else {
+        qdr_connection_work_t *work = new_qdr_connection_work_t();
+        ZERO(work);
+
+        //
+        // Send the second end in response to the first inbound end
+        //
+        work->work_type = QDR_CONNECTION_WORK_SECOND_END;
+        work->sess      = sess;
+        work->error     = error;
+        qdr_connection_enqueue_work_CT(core, sess->conn, work);
+    }
+
+}

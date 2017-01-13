@@ -96,6 +96,7 @@ struct qdr_action_t {
             qdr_connection_t *conn;
             qdr_field_t      *connection_label;
             qdr_field_t      *container_id;
+            qdr_session_t    *session;
             qdr_link_t       *link;
             qdr_delivery_t   *delivery;
             qd_message_t     *msg;
@@ -258,6 +259,7 @@ struct qdr_link_t {
     uint64_t                 identity;
     void                    *user_context;
     qdr_connection_t        *conn;               ///< [ref] Connection that owns this link
+    qdr_session_t           *sess;
     qd_link_type_t           link_type;
     qd_direction_t           link_direction;
     char                    *name;
@@ -291,6 +293,17 @@ struct qdr_link_t {
 
 ALLOC_DECLARE(qdr_link_t);
 DEQ_DECLARE(qdr_link_t, qdr_link_list_t);
+
+struct qdr_session_t {
+    DEQ_LINKS(qdr_session_t);
+    qdr_core_t              *core;
+    uint64_t                 identity;
+    qdr_connection_t        *conn;
+    void                    *user_context;
+};
+
+ALLOC_DECLARE(qdr_session_t);
+DEQ_DECLARE(qdr_session_t, qdr_session_list_t);
 
 struct qdr_link_ref_t {
     DEQ_LINKS(qdr_link_ref_t);
@@ -422,6 +435,10 @@ qdr_general_work_t *qdr_general_work(qdr_general_work_handler_t handler);
 // will run concurrently.
 //
 typedef enum {
+    QDR_CONNECTION_WORK_FIRST_BEGIN,
+    QDR_CONNECTION_WORK_SECOND_BEGIN,
+    QDR_CONNECTION_WORK_FIRST_END,
+    QDR_CONNECTION_WORK_SECOND_END,
     QDR_CONNECTION_WORK_FIRST_ATTACH,
     QDR_CONNECTION_WORK_SECOND_ATTACH,
     QDR_CONNECTION_WORK_FIRST_DETACH,
@@ -432,6 +449,7 @@ typedef struct qdr_connection_work_t {
     DEQ_LINKS(struct qdr_connection_work_t);
     qdr_connection_work_type_t  work_type;
     qdr_link_t                 *link;
+    qdr_session_t              *sess;
     qdr_terminus_t             *source;
     qdr_terminus_t             *target;
     qdr_error_t                *error;
@@ -560,6 +578,7 @@ struct qdr_core_t {
     qdr_connection_list_t open_connections;
     qdr_connection_list_t connections_to_activate;
     qdr_link_list_t       open_links;
+    qdr_session_list_t    open_sessions;
 
     //
     // Agent section
@@ -586,6 +605,11 @@ struct qdr_core_t {
     qdr_connection_activate_t  activate_handler;
     qdr_link_first_attach_t    first_attach_handler;
     qdr_link_second_attach_t   second_attach_handler;
+    qdr_session_first_begin_t  first_begin_handler;
+    qdr_session_second_begin_t second_begin_handler;
+
+    qdr_session_end_t          end_handler;
+
     qdr_link_detach_t          detach_handler;
     qdr_link_flow_t            flow_handler;
     qdr_link_offer_t           offer_handler;
@@ -660,8 +684,12 @@ void qdr_connection_enqueue_work_CT(qdr_core_t            *core,
                                     qdr_connection_t      *conn,
                                     qdr_connection_work_t *work);
 
+qdr_session_t *qdr_create_session_CT(qdr_core_t       *core,
+                                     qdr_connection_t *conn);
+
 qdr_link_t *qdr_create_link_CT(qdr_core_t       *core,
                                qdr_connection_t *conn,
+                               qdr_session_t    *sess,
                                qd_link_type_t    link_type,
                                qd_direction_t    dir,
                                qdr_terminus_t   *source,
