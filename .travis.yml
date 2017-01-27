@@ -40,12 +40,10 @@ before_script:
 - source config.sh
 - mkdir build
 - cd build
-- ls -ltr /usr/lib/python2.7/site-packages
-- export PYTHONPATH=/usr/lib/python2.7/site-packages
+- export PYTHONPATH=$PYTHONPATH:/usr/lib/proton/bindings/python
 - cmake .. -DCMAKE_INSTALL_PREFIX=/usr
 - sudo make install
 script:
-- export PYTHONPATH=$PYTHONPATH:/usr/lib/proton/bindings/python
 #- strace -f /home/travis/virtualenv/python2.7.9/bin/python "/home/travis/build/ganeshmurthy/qpid-dispatch/build/tests/run.py" "--vg" "unit_tests" "/home/travis/build/ganeshmurthy/qpid-#dispatch/tests/threads4.conf"
 - ctest -VV
 
