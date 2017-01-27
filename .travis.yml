@@ -1,0 +1,49 @@
+os:
+- linux
+sudo: required
+language:
+- python
+python:
+- 2.7
+addons:
+  apt:
+    packages:
+    - cmake
+    - cmake-curses-gui
+    - uuid-dev
+    - libssl-dev
+    - sasl2-bin
+    - libsasl2-2
+    - libsasl2-dev
+    - swig
+    - python-dev
+    - ruby-dev
+    - libperl-dev
+    - git
+    - make
+    - doxygen
+    - valgrind
+
+before_install:
+- git submodule add https://github.com/apache/qpid-proton.git
+- git submodule init
+- git submodule update
+before_script:
+- export PATH=${HOME}/.local/bin:${PATH}
+- cd qpid-proton
+- mkdir build
+- cd build
+- cmake .. -DCMAKE_INSTALL_PREFIX=/usr
+# This builds qpid-proton
+- sudo make install 
+- cd ../..
+- source config.sh
+- mkdir build
+- cd build
+- cmake .. -DCMAKE_INSTALL_PREFIX=/usr
+- sudo make install
+script:
+- export PYTHONPATH=$PYTHONPATH:/usr/lib/proton/bindings/python
+#- strace -f /home/travis/virtualenv/python2.7.9/bin/python "/home/travis/build/ganeshmurthy/qpid-dispatch/build/tests/run.py" "--vg" "unit_tests" "/home/travis/build/ganeshmurthy/qpid-#dispatch/tests/threads4.conf"
+- ctest -VV
+
