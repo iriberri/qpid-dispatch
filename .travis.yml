@@ -37,11 +37,10 @@ before_script:
 # This builds qpid-proton
 - sudo make install 
 - cd ../..
-- source config.sh
 - mkdir build
 - cd build
 - export PYTHONPATH=$PYTHONPATH:/usr/lib/proton/bindings/python:/usr/lib/python2.7/site-packages
-- echo $PYTHONPATH
+- source config.sh
 - cmake .. -DCMAKE_INSTALL_PREFIX=/usr
 - sudo make install
 script:
