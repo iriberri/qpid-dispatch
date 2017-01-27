@@ -40,6 +40,7 @@ before_script:
 - source config.sh
 - mkdir build
 - cd build
+- ls -ltr /usr/lib/python2.7/site-packages
 - export PYTHONPATH=/usr/lib/python2.7/site-packages
 - cmake .. -DCMAKE_INSTALL_PREFIX=/usr
 - sudo make install
