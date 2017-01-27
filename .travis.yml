@@ -40,7 +40,8 @@ before_script:
 - source config.sh
 - mkdir build
 - cd build
-- export PYTHONPATH=$PYTHONPATH:/usr/lib/proton/bindings/python
+- export PYTHONPATH=$PYTHONPATH:/usr/lib/proton/bindings/python:/usr/lib/python2.7/site-packages
+- echo $PYTHONPATH
 - cmake .. -DCMAKE_INSTALL_PREFIX=/usr
 - sudo make install
 script:
