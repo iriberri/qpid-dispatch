@@ -37,7 +37,7 @@ before_script:
 # This builds qpid-proton
 - sudo make install 
 - cd ../..
-- export PYTHONPATH=$PYTHONPATH:/usr/lib/proton/bindings/python:/usr/lib/python2.7/site-packages
+- export PYTHONPATH=$PYTHONPATH:/usr/lib/python2.7/site-packages
 - source config.sh
 - mkdir build
 - cd build
