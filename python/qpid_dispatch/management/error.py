@@ -21,14 +21,15 @@
 ManagementError exception class and subclasses, with status codes used by AMQP.
 """
 try:
-    from httplib import responses as STATUS_TEXT
+    #from httplib import responses as STATUS_TEXT
+    from httplib import responses, STATUS_TEXT, OK, NO_CONTENT, CREATED, \
+    BAD_REQUEST, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, INTERNAL_SERVER_ERROR, NOT_IMPLEMENTED
 except Exception as e:
     if "openssl_md_meth_names" in e.message:
         pass
     else:
         raise
-from httplib import OK, NO_CONTENT, CREATED, \
-    BAD_REQUEST, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, INTERNAL_SERVER_ERROR, NOT_IMPLEMENTED
+
 
 class ManagementError(Exception):
     """
