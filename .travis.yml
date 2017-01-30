@@ -40,7 +40,7 @@ before_script:
 - sudo python ./setup.py build install
 - popd
 - cd ../..
-#- export PYTHONPATH=$PYTHONPATH:/usr/lib/python2.7/site-packages
+- export PYTHONPATH=$PYTHONPATH:/usr/lib/python2.7/site-packages
 - source config.sh
 - mkdir build
 - cd build
