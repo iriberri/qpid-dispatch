@@ -33,17 +33,19 @@ before_script:
 - cd qpid-proton
 - mkdir build
 - cd build
-- cmake .. -DSYSINSTALL_BINDINGS=ON -DCMAKE_INSTALL_PREFIX=/usr -DSYSINSTALL_PYTHON=ON
-# This builds qpid-proton
-- sudo make install 
+- cmake .. -DCMAKE_INSTALL_PREFIX=/usr
+# This builds and installs qpid-proton
+- sudo make install
+- pushd proton-c/bindings/python/dist
+- sudo python ./setup.py build install
+- popd
 - cd ../..
-- export PYTHONPATH=$PYTHONPATH:/usr/lib/python2.7/site-packages
+#- export PYTHONPATH=$PYTHONPATH:/usr/lib/python2.7/site-packages
 - source config.sh
 - mkdir build
 - cd build
 - cmake .. -DCMAKE_INSTALL_PREFIX=/usr
 - sudo make install
 script:
-#- strace -f /home/travis/virtualenv/python2.7.9/bin/python "/home/travis/build/ganeshmurthy/qpid-dispatch/build/tests/run.py" "--vg" "unit_tests" "/home/travis/build/ganeshmurthy/qpid-#dispatch/tests/threads4.conf"
 - ctest -VV
 
