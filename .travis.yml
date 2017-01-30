@@ -42,6 +42,7 @@ before_script:
 - mkdir build
 - cd build
 - cmake .. -DCMAKE_INSTALL_PREFIX=/usr
+- pip install hashlib
 - sudo make install
 script:
 #- strace -f /home/travis/virtualenv/python2.7.9/bin/python "/home/travis/build/ganeshmurthy/qpid-dispatch/build/tests/run.py" "--vg" "unit_tests" "/home/travis/build/ganeshmurthy/qpid-#dispatch/tests/threads4.conf"
