@@ -29,7 +29,7 @@ before_install:
 - git submodule init
 - git submodule update
 before_script:
-- export PATH=${HOME}/.local/bin:${PATH}
+#- export PATH=${HOME}/.local/bin:${PATH}
 - cd qpid-proton
 - mkdir build
 - cd build
