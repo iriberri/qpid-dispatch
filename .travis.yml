@@ -15,13 +15,13 @@ addons:
     - sasl2-bin
     - libsasl2-2
     - libsasl2-dev
+    - sasl2-bin
     - swig
     - python-dev
     - ruby-dev
     - libperl-dev
     - git
     - make
-    - doxygen
     - valgrind
 
 before_install:
@@ -48,4 +48,3 @@ before_script:
 - sudo make install
 script:
 - ctest -VV
-
