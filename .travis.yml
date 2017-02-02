@@ -41,7 +41,7 @@ before_script:
 - popd
 - cd ../..
 - export PYTHONPATH=$PYTHONPATH:/usr/local/lib/python2.7/dist-packages
-- source config.sh
+#- source config.sh
 - mkdir build
 - cd build
 - cmake .. -DCMAKE_INSTALL_PREFIX=/usr
