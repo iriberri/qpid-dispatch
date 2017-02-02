@@ -40,13 +40,11 @@ before_script:
 - sudo python ./setup.py build install
 - popd
 - cd ../..
-- export PYTHONPATH=$PYTHONPATH:/usr/local/lib/python2.7/dist-packages
+#- export PYTHONPATH=$PYTHONPATH:/usr/local/lib/python2.7/dist-packages
 - echo $LD_LIBRARY_PATH
-- source config.sh
 - mkdir build
 - cd build
 - cmake .. -DCMAKE_INSTALL_PREFIX=/usr
 - sudo make install
-- printenv
 script:
 - ctest -VV
