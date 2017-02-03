@@ -38,6 +38,7 @@ before_script:
 - pushd proton-c/bindings/python/dist
 - sudo python ./setup.py build install
 - popd
+- export PYTHONPATH=$PYTHONPATH:/usr/local/lib/python2.7/dist-packages
 - cd ../..
 - mkdir build
 - cd build
