@@ -29,7 +29,6 @@ before_install:
 - git submodule init
 - git submodule update
 before_script:
-#- export PATH=${HOME}/.local/bin:${PATH}
 - cd qpid-proton
 - mkdir build
 - cd build
@@ -40,11 +39,11 @@ before_script:
 - sudo python ./setup.py build install
 - popd
 - cd ../..
-#- export PYTHONPATH=$PYTHONPATH:/usr/local/lib/python2.7/dist-packages
-- echo $LD_LIBRARY_PATH
 - mkdir build
 - cd build
 - cmake .. -DCMAKE_INSTALL_PREFIX=/usr
+# This build qpid-dispatch
 - sudo make install
 script:
+# Now run the unit tests
 - ctest -VV
